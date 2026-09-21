@@ -12,3 +12,7 @@
 
 # 图表脚本导出的矢量图保持文本处理
 *.svg text
+
+# Windows 批处理必须用 CRLF：cmd.exe 对 LF 的标签/括号块解析不可靠
+*.bat text eol=crlf
+*.cmd text eol=crlf

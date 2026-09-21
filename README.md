@@ -14,6 +14,13 @@
 
 ## 1. 快速开始
 
+**Windows 一键启动**：双击根目录的 `启动服务.bat`。它会自动定位 Python、校验版本、
+依赖缺失时自动安装（默认源失败会改用清华镜像重试），启动服务并自动打开网页；
+若检测到本工具**已在运行**，则直接打开已有页面，不会重复启动第二个实例。
+停止服务：关闭该控制台窗口（或按 Ctrl+C，若提示「终止批处理操作吗」按 `Y`）。
+
+也可以用命令行启动：
+
 ```bash
 pip install -r requirements.txt
 python run.py                 # 启动并自动打开浏览器（http://127.0.0.1:8765/）
@@ -177,7 +184,8 @@ ts5 / rs50              气温轴 / 降水轴刻度步长
 
 ```
 DrawClimateChartWeb/
-├── run.py                     # 启动入口
+├── 启动服务.bat                # ★ Windows 一键启动：查依赖 → 起服务 → 自动开网页
+├── run.py                     # 启动入口（--host / --port / --no-browser）
 ├── requirements.txt
 ├── core/                      # ★ 只读复制自参考项目 src/（未做任何修改）
 │   ├── http_client.py         #   请求：缓存 / 超时 / DNS 兜底 / 指数退避重试 / 限速 / BOM 解码
