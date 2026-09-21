@@ -1,0 +1,43 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# ---- 运行产物：数据缓存（程序自动重建，不入库） ----
+# HTTP 响应缓存（SHA1(URL).bin + .meta.json）、城市索引缓存（city_index.json）、
+# 网页端界面状态（ui_state.json）、原始响应（cache/raw/）等，均由程序按需重建；
+# 仅保留顶层说明文件以维持目录结构。
+cache/*
+!cache/说明.md
+
+# ---- 运行产物：自定义配置（由用户在本机维护，不入库） ----
+# 与参考项目保持一致：config/custom/ 下的配置属"本机个人样式"，不随仓库分发。
+# 仓库内置的示例自定义配置是 config/custom.yaml（含「简图」）。
+config/custom/*
+!config/custom/.gitkeep
+
+# ---- 运行产物：交付物（表格与图，重新出图即可产出，不入库） ----
+output/*
+!output/.gitkeep
+
+# ---- 测试夹具 ----
+# 复制自参考项目的真实响应样本，本仓库的测试暂未使用（测试走实网或暖缓存）。
+tests/fixtures/
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+~$*
+
+# ---- 工具元数据（含机器相关信息，不入库） ----
+.codebuddy/
+.workbuddy/

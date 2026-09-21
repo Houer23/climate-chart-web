@@ -1,0 +1,7 @@
+# DrawClimateChartWeb 依赖
+#
+# Web 服务层只用 Python 标准库（http.server / json / threading / queue / urllib），
+# 因此这里的依赖与参考 CLI 项目完全一致，**没有额外 Web 框架依赖**。
+matplotlib>=3.8      # 绘图（含 numpy）
+openpyxl>=3.1        # XLSX 表格输出
+PyYAML>=6.0          # YAML 配置
