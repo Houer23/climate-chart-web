@@ -201,9 +201,8 @@ DrawClimateChartWeb/
 │   └── js/{api,form,app}.js   #   API 客户端 / Schema 驱动表单 / 应用编排
 ├── config/                    # 复用参考项目配置（profiles.yaml 只读，custom/ 可写）
 ├── cache/                     # 数据缓存（HTTP 响应 + 城市索引）
-├── output/                    # 出图产物
-├── docs/reference/            # 参考项目的 README / 功能说明 / 开发计划（对照用）
-└── tests/                     # 回归测试（全部离线可跑）
+├── output/                    # 出图产物（.gitkeep 占位，内容不入库）
+└── tests/                     # 四套回归测试（接口套件需联网或暖缓存，其余离线）
 ```
 
 ---
