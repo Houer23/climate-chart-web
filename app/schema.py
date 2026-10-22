@@ -66,6 +66,7 @@ LINESTYLE_ENUM: tuple[tuple[str, str], ...] = (
 
 MARKER_ENUM: tuple[tuple[str, str], ...] = (
     ("", "不显示"),
+    (".", "小点 ."),
     ("o", "圆点 o"),
     ("s", "方块 s"),
     ("^", "上三角 ^"),

@@ -848,9 +848,13 @@ async function render() {
 
   const localErrors = form.errors();
   if (Object.keys(localErrors).length) {
-    form.markServerErrors(Object.entries(localErrors).map(([path, message]) => ({ path, message })));
+    const errors = Object.entries(localErrors).map(([path, message]) => ({ path, message }));
+    form.markServerErrors(errors);
+    // 本地校验的明细也要进「提示」页签，否则只弹出条数、看不到是哪一项
+    state.warnings = errors;
+    renderWarnings();
     switchTab("warn");
-    toast(`有 ${Object.keys(localErrors).length} 个配置项填写有误`, "err");
+    toast(`有 ${errors.length} 个配置项填写有误：${errors[0].path}（${errors[0].message}）`, "err");
     return;
   }
 

@@ -147,6 +147,7 @@ check(accepts("fetch.headers", {"Referer": "https://x/"}), "str_map 应接受对
 check(rejects("series.minTemp.alpha", 1.5), "透明度应拒绝 > 1")
 check(rejects("series.minTemp.marker", "q"), "标记应拒绝未声明符号")
 check(accepts("series.minTemp.marker", ""), "标记应接受空字符串（不显示）")
+check(accepts("series.minTemp.marker", "."), "标记应接受小点 .（matplotlib 合法符号）")
 
 check(rejects("data.lang", {"a": 1}), "文本字段应拒绝对象")
 
