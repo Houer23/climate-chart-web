@@ -916,8 +916,42 @@ def _plot_one(ax, key: str, scfg: dict[str, Any], x: np.ndarray, y: np.ndarray,
                    zorder=zorder, label=label, **marker_kwargs)[0]
 
 
+def _label_step(ax, x: np.ndarray, y: np.ndarray, fmt: str, fontsize: float,
+                bar_width: float) -> int:
+    """柱宽放不下标签时「隔几项标一次」，返回 1 表示每个都标。
+
+    按「字符数 × 字号」估算标签的像素宽度，再用 x 轴的数据跨度 / 绘图区像素宽度
+    换算回数据单位；小于柱宽就不跳过。折线类（``bar_width`` 为 0）永不跳过。
+    """
+    if bar_width <= 0 or len(x) < 2:
+        return 1
+    texts: list[str] = []
+    for value in y:
+        if not np.isfinite(value):
+            continue
+        try:
+            texts.append(fmt.format(value))
+        except (ValueError, IndexError, KeyError):
+            texts.append(f"{value:g}")
+    if not texts:
+        return 1
+    longest = max(len(text) for text in texts)
+    label_px = (longest * 0.6 + 0.4) * fontsize      # 数字约 0.6em/字符
+    x0, x1 = ax.get_xlim()
+    span = abs(float(x1) - float(x0)) or 1.0
+    px_span = max(float(ax.bbox.width), 1.0)
+    label_units = label_px * span / px_span
+    if label_units <= bar_width:
+        return 1
+    step = int(np.ceil(label_units / bar_width))
+    # 至少留 3 个标签，避免密集时只剩一个
+    return max(1, min(step, max(1, len(x) // 3)))
+
+
 def _draw_data_labels(ax, scfg: dict[str, Any], x: np.ndarray, y: np.ndarray,
-                      color: str, axis_scale: float = 1.0) -> None:
+                      color: str, axis_scale: float = 1.0,
+                      bar_width: float = 0.0) -> None:
+    """画数值标签；``bar_width`` > 0（柱状）时会自动隔项，避免同月标签互相压。"""
     dl = scfg.get("data_labels") or {}
     if not dl.get("show"):
         return
@@ -926,8 +960,12 @@ def _draw_data_labels(ax, scfg: dict[str, Any], x: np.ndarray, y: np.ndarray,
     lc = _pick(dl.get("color"), color)
     offset = float(dl.get("offset", 4.0))
     position = str(dl.get("position", "top")).lower()
-    for xi, yi in zip(x, y):
+    fontsize = float(dl.get("fontsize", 8.5))
+    step = _label_step(ax, x, y, fmt, fontsize, bar_width)
+    for index, (xi, yi) in enumerate(zip(x, y)):
         if not np.isfinite(yi):
+            continue
+        if step > 1 and index % step:
             continue
         try:
             text = fmt.format(yi)
@@ -937,7 +975,7 @@ def _draw_data_labels(ax, scfg: dict[str, Any], x: np.ndarray, y: np.ndarray,
         dy = offset if position != "bottom" else -offset
         target.annotate(
             text, xy=(xi, yi), xytext=(0, dy), textcoords="offset points",
-            ha="center", va=va, fontsize=float(dl.get("fontsize", 8.5)),
+            ha="center", va=va, fontsize=fontsize,
             color=lc, rotation=float(dl.get("rotation", 0)), zorder=8,
         )
 
@@ -1633,10 +1671,13 @@ def _render_compare_single(cities: list[CityClimate], cfg: dict[str, Any],
             if valid.size:
                 label += f"（{valid.min():.1f}~{valid.max():.1f}）"
 
+        offset = 0.0
+        bar_width = 0.0
         if chart_type == "bar":
             total = len(usable)
             width = float(cmpc.get("bar_width", 0.8)) / max(total, 1)
             offset = (i - (total - 1) / 2.0) * width
+            bar_width = width
             handle = ax.bar(x + offset, np.nan_to_num(values, nan=0.0), width=width,
                             alpha=float(cmpc.get("alpha", 1.0)),
                             label=label, zorder=3, **_bar_style(cmpc, color, i))
@@ -1660,18 +1701,9 @@ def _render_compare_single(cities: list[CityClimate], cfg: dict[str, Any],
                               label=label, zorder=3, **marker_style)
         handles.append(handle)
 
-        dl = _compare_data_labels(cmpc, metric)["data_labels"]
-        if dl.get("show"):
-            for xi, yi in zip(x, values):
-                if not np.isfinite(yi):
-                    continue
-                try:
-                    text = str(dl.get("format", "{:.1f}")).format(yi)
-                except (ValueError, IndexError, KeyError):
-                    text = f"{yi:g}"
-                ax.annotate(text, xy=(xi, yi), xytext=(0, float(dl.get("offset", 4.0))),
-                            textcoords="offset points", ha="center", va="bottom",
-                            fontsize=float(dl.get("fontsize", 8.0)), color=color, zorder=8)
+        # 标签跟随柱子的实际偏移；柱状密集时自动隔项（折线不跳过）
+        _draw_data_labels(ax, _compare_data_labels(cmpc, metric),
+                          x + offset, values, color, bar_width=bar_width)
 
     # 轴：对比图只用单轴，沿用主轴或副轴配置
     axis_key = "secondary" if metric in RAIN_KEYS else "primary"
@@ -2160,9 +2192,11 @@ def _render_compare_overlay(cities: list[CityClimate], cfg: dict[str, Any],
             markersize=markersize, bar_width=width, offset=offset, label=label,
             bar_style=_bar_style(cmpc, item["color"], item["bar_index"]),
             marker_style=_marker_style(cmpc, item["color"], item["city_index"]))
-        # 每条序列按自己的元素取标签配置（元素级可单独开关 / 调格式）
+        # 每条序列按自己的元素取标签配置（元素级可单独开关 / 调格式）；
+        # 标签跟随柱子的实际偏移，柱状密集时自动隔项
         _draw_data_labels(target, _compare_data_labels(cmpc, item["metric"]),
-                          x, item["values"], item["color"])
+                          x + offset, item["values"], item["color"],
+                          bar_width=width if is_bar else 0.0)
 
     axis_defaults = {"primary": (-0.075, "axes_primary"),
                      "secondary": (1.075, "axes_secondary"),
@@ -2294,7 +2328,8 @@ def _draw_compare_metric_panel(ax, cities: list[CityClimate], cfg: dict[str, Any
             bar_width=width, offset=offset, label=label,
             bar_style=_bar_style(cmpc, colors[index], index if bar_by_city else 0),
             marker_style=_marker_style(cmpc, colors[index], index)))
-        _draw_data_labels(ax, label_cfg, x, values, colors[index])
+        _draw_data_labels(ax, label_cfg, x + offset, values, colors[index],
+                          bar_width=width if chart_type in BAR_CHART_TYPES else 0.0)
 
     axis_key = _metric_axis_key(metric)
     ax_cfg = dict(cfg["axes_secondary" if axis_key == "secondary" else "axes_primary"])

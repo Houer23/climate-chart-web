@@ -378,7 +378,7 @@ profiles:
 | `show_value_range` | bool | `true` | 图例中附加该城市的数值范围 |
 | `label_template` | str 模板 | `"{city}"` | 图例名模板；多元素时可用 `{metric}`（未写则自动补「· 元素名」） |
 | `legend_ncol` | int | `0` | 图例列数（旧键，`legend.ncol` 优先）；`0` 自动 |
-| `data_labels.show` / `.fontsize` / `.format` / `.offset` | — | `false` / `8.0` / `"{:.1f}"` / `4.0` | 对比图数值标签 |
+| `data_labels.show` / `.fontsize` / `.format` / `.offset` | — | `false` / `8.0` / `"{:.1f}"` / `4.0` | 对比图数值标签；柱状时跟随柱子偏移，柱宽放不下会**自动隔项** |
 
 ## J. `multi` — 多图（多城市同画布）
 

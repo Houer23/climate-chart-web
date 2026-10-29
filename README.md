@@ -271,6 +271,9 @@ series:
 
 底色与纹理色要有对比，否则纹理会被底色吃掉。
 
+**柱状对比的标签会跟着柱子走**：同一月份的多个城市标签原本都画在同一个 x 上（叠在一起），
+现在按各城市的柱偏移绘制；柱宽放不下标签时**自动隔项**（例如 1/4/7/10 月），不再糊成一团。
+
 **数值标签可按元素单独控制**：`compare.data_labels.*` 是全局默认，
 `compare.element_styles.<元素>.data_labels.*`（`show` / `fontsize` / `format` / `offset`）为元素级覆盖，
 **元素级优先**、留空即跟随全局。例如只给降水显示标签：
@@ -437,6 +440,8 @@ python tests/test_frontend.py         # 前端静态自检：括号配平 / DOM 
   * `_marker_style()`：对比图新增标记填充/轮廓控制（`auto` = 跟随城市色），三条对比路径统一使用；
   * `_compare_data_labels()`：数值标签「全局 + 元素级覆盖」合并（元素优先），
     单元素 / 叠加 / 分面三处不再共用同一份全局配置；
+  * `_draw_data_labels()` / `_label_step()`：柱状标签跟随柱子偏移（原先三处对比路径都画在
+    未偏移的 x 上，同月多个城市会叠在一起），柱宽放不下标签时自动隔项；
   * `_plot_one()`：`step` / `area` / `fill_between` 补上标记参数（原先配了标记也不画），
     `scatter` 改按 `markerfacecolor` / `markeredgecolor` / `markeredgewidth` 上色；
     平滑曲线的图例句柄补上标记（原先图例只有一条光秃秃的线）；
