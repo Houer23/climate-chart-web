@@ -158,6 +158,16 @@ check(accepts("series.rainfall.bar_hatch", ""), "柱纹理应允许留空（默�
 check(accepts("compare.bar_fill", "hatch") and rejects("compare.bar_fill", "none"),
       "对比柱填充方式应接受 solid / hollow / hatch")
 check(accepts("compare.bar_linewidth", 0.8), "对比柱边线宽应接受浮点")
+check(accepts("compare.style_dimension", "city")
+      and accepts("compare.style_dimension", "hybrid"),
+      "样式轮换维度应接受 city / metric / hybrid")
+check(rejects("compare.style_dimension", "element"), "样式轮换维度应拒绝未声明取值")
+check(accepts("compare.bar_fill_cycle", ["solid", "hollow", "hatch"]),
+      "按城市柱填充轮换应接受数组")
+check(rejects("compare.bar_fill_cycle", ["solid", "gradient"]),
+      "按城市柱填充轮换应拒绝未声明取值")
+check(rejects("compare.bar_fill_cycle", "solid,hollow"), "按城市柱填充轮换必须是数组")
+check(accepts("compare.bar_hatch_cycle", ["", "///", "x"]), "按城市柱纹理轮换应接受数组")
 check(not any(value == "barh" for value, _label in schema.CHART_TYPE_ENUM),
       "图形类型不应再提供未实现的 barh")
 

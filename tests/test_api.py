@@ -509,6 +509,40 @@ for compare_mode in ("facet", "overlay"):
         except OSError:
             pass
 
+# 全黑多城：靠线型 / 标记 / 柱填充区分城市（style_dimension=city）
+status, payload = api("POST", "/api/render", {
+    "mode": "compare", "cities": ["637", "634"], "profile": "compare",
+    "values": {**FAST,
+               "compare.colors": ["#000000"],
+               "compare.metrics": [],
+               "compare.metric": "rainfall",
+               "compare.chart_type": "bar",
+               "compare.bar_fill_cycle": ["solid", "hollow"],
+               "compare.bar_hatch_cycle": ["", ""],
+               "compare.linestyle_cycle": ["-", "--"],
+               "compare.marker_cycle": ["o", "s"],
+               "compare.style_dimension": "city",
+               "output.compare_name_template": "_apitest_black"},
+    "save_files": True,
+})
+black_id = (payload.get("task") or {}).get("id")
+snapshot = {}
+deadline = time.time() + 240
+while time.time() < deadline:
+    status, snapshot = api("GET", f"/api/render/{black_id}?cursor=0&wait=10")
+    if snapshot.get("status") in ("done", "error", "cancelled"):
+        break
+check(snapshot.get("status") == "done",
+      f"全黑多城对比应完成，实际 {snapshot.get('status')} {snapshot.get('error')}")
+black_compare = (snapshot.get("result") or {}).get("compare") or {}
+check(len(black_compare.get("files") or []) >= 1,
+      f"全黑多城对比应产出图片，实际 {black_compare}")
+for path in black_compare.get("files") or []:
+    try:
+        Path(path).unlink()
+    except OSError:
+        pass
+
 # ---- 错误路径 ------------------------------------------------------------
 
 status, payload = api("POST", "/api/render", {"mode": "city", "cities": [], "profile": "default"})

@@ -143,7 +143,7 @@ ts5 / rs50              气温轴 / 降水轴刻度步长
 
 ### 3.3 按数据类型的输入验证
 
-`app/schema.py` 为全部 491 个配置项声明了**类型 / 枚举 / 范围 / 说明 / 分组**，前端据此渲染控件并即时校验，
+`app/schema.py` 为全部 508 个配置项声明了**类型 / 枚举 / 范围 / 说明 / 分组**，前端据此渲染控件并即时校验，
 后端用同一份规则做权威校验（绕过前端也进不了渲染流程）。分组内部还可再分二级小节：
 D 组把 `figure.legend.*` 的 **14 项图例参数**收进「图例（单图 / 对比图 / 多图通用）」小节，
 I 组把 5 个元素的样式收进各自的元素小节。
@@ -208,6 +208,32 @@ I 组把 5 个元素的样式收进各自的元素小节。
 `solid` 下填写 `bar_hatch` 可在纯色上叠加纹理；图例色块会跟着变（空心/带纹理）。
 对比图的柱子原先只有 `bar_width`，现在与单图一致地支持 `bar_fill` / `bar_hatch` /
 `bar_edgecolor` / `bar_linewidth`。
+
+**多城市对比：按城市轮换样式（颜色统一时靠样式区分城市）**
+
+对比图除全局的 `bar_fill` / `bar_hatch` 外，还有两组**按城市顺序轮换**的键
+`bar_fill_cycle`（如 `["solid", "hollow", "hatch"]`）与 `bar_hatch_cycle`（如 `["", "", "///"]`），
+非空时覆盖全局值。线型 / 标记的轮换维度由 `compare.style_dimension` 决定：
+
+| `style_dimension` | 线型 | 标记 | 柱填充 / 纹理 |
+|---|---|---|---|
+| `city`（默认） | 城市 | 城市 | 城市 |
+| `metric` | 元素 | 元素 | 元素 |
+| `hybrid` | 城市 | 元素 | 城市 |
+
+典型用法——**所有城市同色（黑），只用样式区分**：
+
+```yaml
+compare:
+  colors: ["#000000"]
+  linestyle_cycle: ["-", "--", "-.", ":"]
+  marker_cycle: ["o", "s", "^", "D"]
+  bar_fill_cycle: ["solid", "hollow", "hatch"]
+  bar_hatch_cycle: ["", "", "///"]
+  style_dimension: city
+```
+
+`hatch` 模式不填底色、只画纹理，所以全黑时条纹仍然清晰，图例色块同步。
 
 ---
 
@@ -289,9 +315,9 @@ DrawClimateChartWeb/
 ## 7. 测试
 
 ```bash
-python tests/test_schema.py           # 配置 Schema：覆盖完整性 + 默认值自洽 + 类型校验严格性（611 项）
+python tests/test_schema.py           # 配置 Schema：覆盖完整性 + 默认值自洽 + 类型校验严格性（620 项）
 python tests/test_config_service.py   # 配置服务：校验/模式感知/保存/另存/差量洁净度/全量剔除默认/界面状态（约 232 项，随自定义配置数变化）
-python tests/test_api.py              # 接口端到端：真实 HTTP + SSE + 出图（含多元素 facet/overlay、城市名统一）+ 不保存开关（122 项）
+python tests/test_api.py              # 接口端到端：真实 HTTP + SSE + 出图（含多元素 facet/overlay、城市名统一、全黑多城）+ 不保存开关（124 项）
 python tests/test_frontend.py         # 前端静态自检：括号配平 / DOM 引用 / 控件类型覆盖 / 布局约束（95 项）
 ```
 
@@ -328,16 +354,21 @@ python tests/test_frontend.py         # 前端静态自检：括号配平 / DOM 
 
 ## 9. 与参考项目的差异
 
-`core/` 是参考项目 `src/` 的复制。目前**唯一**的本地增强是柱状填充方式：
+`core/` 是参考项目 `src/` 的复制。目前的本地增强集中在「柱状填充 + 多城市对比的样式维度」：
 
-* `core/config_loader.py`：`series.*` 新增 `bar_fill` / `bar_hatch`；`compare.*` 新增
-  `bar_fill` / `bar_hatch` / `bar_edgecolor` / `bar_linewidth`；`validate_config` 增加
-  `compare.bar_fill` 校验。
-* `core/chart.py`：新增 `_bar_style()`，单图 / 对比单元素 / 对比叠加与分面三条绘制路径统一走它；
-  对比图的柱子顺带补齐了原先缺失的边框参数。
+* `core/config_loader.py`
+  * `series.*`：`bar_fill` / `bar_hatch`；
+  * `compare.*`：`bar_fill` / `bar_hatch` / `bar_edgecolor` / `bar_linewidth`，
+    `bar_fill_cycle` / `bar_hatch_cycle`（按城市轮换），`style_dimension`（city / metric / hybrid）；
+  * `validate_config`：新增上述枚举与数组校验。
+* `core/chart.py`
+  * `_bar_style()`：新增索引参数，支持按城市轮换填充/纹理；`hatch` 改为不填底色（同色也清晰）；
+  * `_compare_metric_style()`：按 `style_dimension` 分配「线型/标记」维度，元素级 `chart_type` 优先；
+  * 单元素 / 分面 / 叠加三条对比路径统一使用它——**分面此前完全忽略 `element_styles`**；
+  * `element_styles.<元素>.marker` 显式设为「不显示」（空串）现在会生效（原先被当空值回落）。
 
-其余 `core/` 文件与参考项目逐字节一致。该增强可以回灌：把这两处 diff 搬回
-`DrawClimateChart/src/`，再在本仓库重新同步即可。
+其余 `core/` 文件与参考项目逐字节一致。回灌方式：把 `core/chart.py`、`core/config_loader.py`
+的上述 diff 搬回 `DrawClimateChart/src/`，再在本仓库重新同步。
 
 另外，前端图形类型里移除了 `barh`（横向柱状）：core 只在 `BAR_CHART_TYPES` 里提到它，
 并没有真正的 `barh` 绘制实现，选它只会退化成折线——移除避免误导。

@@ -287,7 +287,7 @@ profiles:
 | `markeredgewidth` | float | `1.0` | 标记边宽 |
 | `markevery` | int | `1` | 每隔 N 个点显示一个标记 |
 | `bar_width` | float | `0.55` | 柱宽（`bar` 专有） |
-| `bar_fill` | str | `"solid"` | 柱填充方式：`solid` 实心 / `hollow` 空心（仅边框；边色缺省取系列色、线宽缺省 1.2）/ `hatch` 纹理填充 |
+| `bar_fill` | str | `"solid"` | 柱填充方式：`solid` 实心 / `hollow` 空心（仅边框；边色缺省取系列色、线宽缺省 1.2）/ `hatch` 纹理填充（不填底色、只画纹理，全黑同色场景也清晰） |
 | `bar_hatch` | str | `""` | 纹理样式（matplotlib hatch：`/` `\` `\|` `-` `+` `x` `o` `.` `*`，重复字符可加密如 `///`）；空 = `/` |
 | `bar_edgecolor` / `bar_linewidth` | — | `"none"` / `0.0` | 柱边线；`hatch` 模式下也是纹理颜色 |
 | `bar_align` | str | `"center"` | 柱对齐 `center`/`edge` |
@@ -358,11 +358,14 @@ profiles:
 | `colors` | array | 8 色 | 按顺序分配给城市 |
 | `color_map` | obj | `{}` | 显式指定「城市名 → 颜色」，优先于 `colors` |
 | `color_by` | str | `"order"` | `order` 按传入顺序 / `city_id` 按编号取色 |
-| `linestyle_cycle` / `marker_cycle` | array | 4 种 / 8 种 | 线型与标记循环 |
+| `linestyle_cycle` / `marker_cycle` | array | 4 种 / 8 种 | 线型与标记循环，**按城市**轮换（颜色统一时靠样式区分城市） |
+| `style_dimension` | str | `"city"` | 线型/标记按谁轮换：`city` 按城市 / `metric` 按元素（旧行为，元素样式里的线型·标记生效）/ `hybrid` 线型按城市、标记按元素；柱的填充与纹理跟随同一维度 |
 | `linewidth` / `markersize` / `alpha` | — | `2.2` / `5.0` / `1.0` | 线条样式 |
 | `bar_width` | float | `0.8` | 柱状模式总柱宽（内部按城市/元素数均分） |
-| `bar_fill` | str | `"solid"` | 柱填充方式：`solid` 实心 / `hollow` 空心 / `hatch` 纹理填充 |
-| `bar_hatch` | str | `""` | 纹理样式（同 `series.bar_hatch`）；空 = `/` |
+| `bar_fill` | str | `"solid"` | 柱填充方式（全局兜底）：`solid` 实心 / `hollow` 空心 / `hatch` 纹理填充 |
+| `bar_hatch` | str | `""` | 纹理样式（全局兜底，同 `series.bar_hatch`）；空 = `/` |
+| `bar_fill_cycle` | array | `["solid"]` | **按城市**轮换的柱填充方式，非空时覆盖 `bar_fill`（如 `[solid, hollow, hatch]`） |
+| `bar_hatch_cycle` | array | `[]` | **按城市**轮换的柱纹理样式，非空时覆盖 `bar_hatch`（留空项 = 该城市不加纹理） |
 | `bar_edgecolor` / `bar_linewidth` | — | `"none"` / `0.0` | 柱边线；`hollow` 时线宽缺省 1.2 |
 | `sort_by` | str | `"value_desc"` | `none` / `value_desc` / `value_asc` / `name` / `city_id` |
 | `show_value_range` | bool | `true` | 图例中附加该城市的数值范围 |

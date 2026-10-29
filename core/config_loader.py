@@ -525,6 +525,9 @@ DEFAULTS: dict[str, Any] = {
         "bar_width": 0.8,
         "bar_fill": "solid",                # 柱状对比时的填充方式：solid | hollow | hatch
         "bar_hatch": "",                    # 纹理样式；空 = "/"
+        "bar_fill_cycle": ["solid"],        # 按城市轮换的填充方式（多城市对比；非空时覆盖 bar_fill）
+        "bar_hatch_cycle": [],              # 按城市轮换的纹理样式（非空时覆盖 bar_hatch；空 = 不覆盖）
+        "style_dimension": "city",          # 线型/标记按谁轮换：city（默认）| metric（旧行为）| hybrid
         "bar_edgecolor": "none",            # 柱边框色（solid 时也可用来勾边）
         "bar_linewidth": 0.0,               # 柱边框线宽；hollow 下留 0 会自动取 1.2
         "sort_by": "value_desc",            # none | value_desc | value_asc | name | city_id
@@ -1282,6 +1285,23 @@ def validate_config(cfg: dict[str, Any]) -> list[str]:
         raise ConfigError("compare.bar_fill 只能是 solid（实心，默认）/ hollow（空心，仅边框）"
                           "/ hatch（纹理填充）"
                           f"（当前：{cmpc.get('bar_fill')}）")
+
+    style_dimension = str(cmpc.get("style_dimension", "city") or "city").lower()
+    if style_dimension not in ("city", "metric", "hybrid"):
+        raise ConfigError("compare.style_dimension 只能是 city（按城市轮换，默认）/ "
+                          "metric（按元素轮换，旧行为）/ hybrid（线型按城市、标记按元素）"
+                          f"（当前：{cmpc.get('style_dimension')}）")
+    fill_cycle = cmpc.get("bar_fill_cycle")
+    if fill_cycle is not None:
+        if not isinstance(fill_cycle, list):
+            raise ConfigError("compare.bar_fill_cycle 必须是数组（按城市顺序轮换）")
+        for item in fill_cycle:
+            if str(item).lower() not in ("solid", "hollow", "hatch"):
+                raise ConfigError("compare.bar_fill_cycle 只能包含 solid / hollow / hatch"
+                                  f"（当前：{item}）")
+    hatch_cycle = cmpc.get("bar_hatch_cycle")
+    if hatch_cycle is not None and not isinstance(hatch_cycle, list):
+        raise ConfigError("compare.bar_hatch_cycle 必须是数组（按城市顺序轮换）")
 
     # 10) 请求层：DNS 预解析超时（0 表示关闭预检查）
     raw_resolve = cfg["fetch"].get("resolve_timeout", 0) or 0
