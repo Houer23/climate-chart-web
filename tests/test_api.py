@@ -136,6 +136,13 @@ check(len(color_map_field["valueOptions"]) >= 8,
       f"color_map 应提供 ≥8 个预设颜色，实际 {len(color_map_field['valueOptions'])}")
 check(color_map_field["extra"] is True, "color_map 应标记为扩展键")
 
+check(compare_fields["compare.metrics"]["maxItems"] == 4,
+      "compare.metrics 应向前端暴露 maxItems=4")
+check(len(groups["compare"].get("subgroups") or []) == 5,
+      f"compare 分组应给出 5 个元素样式子分组，实际 {groups['compare'].get('subgroups')}")
+check(any(f["subgroup"] for f in groups["compare"]["fields"]),
+      "元素样式字段应带 subgroup，前端才能渲染成 5 个小组")
+
 status, payload = api("GET", "/api/profiles")
 check(status == 200 and any(p["name"] == "default" for p in payload["profiles"]),
       "配置清单应含 default")
@@ -409,6 +416,41 @@ for path in compare.get("files") or []:
         Path(path).unlink()
     except OSError:
         pass
+
+# 多元素对比：facet（一格一元素）与 overlay（同图叠加）
+for compare_mode in ("facet", "overlay"):
+    status, payload = api("POST", "/api/render", {
+        "mode": "compare", "cities": ["237", "1"], "profile": "compare",
+        "values": {**FAST,
+                   "compare.metrics": ["minTemp", "maxTemp"],
+                   "compare.grid": "1x2",
+                   "compare.mode": compare_mode,
+                   "output.compare_name_template": f"_apitest_compare_{compare_mode}"},
+        "save_files": True,
+    })
+    task_id = (payload.get("task") or {}).get("id")
+    snapshot = {}
+    deadline = time.time() + 240
+    while time.time() < deadline:
+        status, snapshot = api("GET", f"/api/render/{task_id}?cursor=0&wait=10")
+        if snapshot.get("status") in ("done", "error", "cancelled"):
+            break
+    check(snapshot.get("status") == "done",
+          f"多元素对比（{compare_mode}）应完成，"
+          f"实际 {snapshot.get('status')} {snapshot.get('error')}")
+    multi_compare = (snapshot.get("result") or {}).get("compare") or {}
+    check(len(multi_compare.get("files") or []) >= 1,
+          f"多元素对比（{compare_mode}）应产出图片，实际 {multi_compare}")
+    check(len(multi_compare.get("series") or []) >= 2,
+          f"多元素对比（{compare_mode}）应报告 2 个元素，实际 {multi_compare.get('series')}")
+    messages = [entry.get("message", "") for entry in snapshot.get("logs") or []]
+    check(any("对比元素：minTemp、maxTemp" in text for text in messages),
+          f"日志应报告多元素与呈现方式，实际 {messages[-6:]}")
+    for path in multi_compare.get("files") or []:
+        try:
+            Path(path).unlink()
+        except OSError:
+            pass
 
 # ---- 错误路径 ------------------------------------------------------------
 

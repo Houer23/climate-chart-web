@@ -195,6 +195,28 @@ if defaults:
     check(levels == html_levels,
           f"默认日志级别应与页面勾选项一致：{sorted(levels)} vs {sorted(html_levels)}")
 
+# ---- 5. 多元素对比界面 ---------------------------------------------------
+
+form_code = (WEB / "js" / "form.js").read_text(encoding="utf-8")
+
+check('id="metric-checks"' in html and 'id="compare-mode"' in html,
+      "index.html 应提供多元素勾选组与呈现方式下拉")
+check("compare_metrics" in app_code and "compare_mode" in app_code,
+      "app.js 应把多元素与呈现方式一起提交")
+check("metric-input" not in app_code + html,
+      "旧的单选 compare_metric 控件应已移除")
+check(app_code.count("metric-checks") >= 2,
+      "app.js 应读取并约束 #metric-checks 的勾选数量")
+check("picked >= 4" in app_code and "已选满" in app_code,
+      "app.js 应在勾满 4 个后禁用其余选项")
+
+check(form_code.count('case "enum_or_null"') >= 2,
+      "form.js 应在校验与控件两处都处理 enum_or_null")
+check("maxItems" in form_code, "form.js 应处理 list_enum 的 maxItems 上限")
+check("mainRows" in form_code,
+      "二级子分组下的主区字段应参与过滤（applyFilters 需覆盖 mainRows）")
+check("field.subgroup" in form_code, "form.js 应按 field.subgroup 归组")
+
 # ---- 5. 「上次使用的配置」关键逻辑存在性 ---------------------------------
 
 check('"/api/state"' in app_code, "app.js 应通过 /api/state 记住并恢复上次使用的配置")

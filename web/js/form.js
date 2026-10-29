@@ -75,6 +75,12 @@ function validateField(field, value) {
       if (value.length !== 2) return "需要两个数字";
       return value.every(isNumber) ? null : "需要两个数字";
     }
+    case "enum_or_null": {
+      // null / 空串 = 不指定，交给后端回落默认
+      if (value === null || value === undefined || String(value).trim() === "") return null;
+      return field.enum.some((item) => String(item.value) === String(value))
+        ? null : `只能是 ${field.enum.map((i) => i.value).join("、")} 之一，或留空`;
+    }
     case "enum": {
       if (field.coerce === "int") {
         const number = Number(value);
@@ -126,6 +132,9 @@ function validateField(field, value) {
       const allowed = field.options.map((item) => String(item.value));
       const bad = value.filter((item) => !allowed.includes(String(item)));
       if (bad.length) return `含不支持的取值 ${bad.join("、")}`;
+      if (field.maxItems && value.length > field.maxItems) {
+        return `最多选择 ${field.maxItems} 项（当前 ${value.length} 项）`;
+      }
       return value.length === 0 && !field.allowEmpty ? "至少要选择一项" : null;
     }
     case "list_str":
@@ -311,7 +320,10 @@ class ConfigForm {
       const container = this.groupNodes.get(group.key);
       if (!container) return;
       let visibleTotal = 0;
-      const targets = container.subgroups.length ? container.subgroups : [container];
+      // 有二级子分组时，主区字段（不属于任何子分组）也要参与过滤与计数
+      const targets = container.subgroups.length
+        ? [{ rows: container.mainRows || [], details: null }, ...container.subgroups]
+        : [container];
       targets.forEach((target) => {
         let visible = 0;
         target.rows.forEach((row) => {
@@ -363,15 +375,20 @@ class ConfigForm {
       this.root.appendChild(details);
 
       const container = {
-        details, rows: [], subgroups: [], countNode: counter,
+        details, rows: [], subgroups: [], mainRows: [], countNode: counter,
       };
       this.groupNodes.set(group.key, container);
 
-      if (group.key === "series" && group.seriesKeys) {
-        // 绘图元素：按元素再分一层子分组
+      const subgroupDefs = (group.subgroups && group.subgroups.length)
+        ? group.subgroups
+        : (group.key === "series" && group.seriesKeys ? group.seriesKeys : []);
+      if (subgroupDefs.length) {
+        // 二级分组：绘图元素（series）/ 对比的元素样式（compare.element_styles）
         container.subgroups = [];
+        const mainBody = h("div", {});
+        body.appendChild(mainBody);        // 不属于子分组的字段仍排在前面
         const rowsByKey = new Map();
-        group.seriesKeys.forEach((item) => {
+        subgroupDefs.forEach((item) => {
           const subBody = h("div", { class: "group-body" });
           const subDetails = h("details", { class: "group", open: item.value === "maxTemp" }, [
             h("summary", {}, [h("span", { text: item.label })]),
@@ -383,11 +400,16 @@ class ConfigForm {
           rowsByKey.set(item.value, sub);
         });
         (group.fields || []).forEach((field) => {
-          const key = field.path.split(".")[1];
-          const sub = rowsByKey.get(key) || container.subgroups[0];
+          const key = field.subgroup || field.path.split(".")[1];
+          const sub = rowsByKey.get(key);
           const row = this.buildRow(field);
-          subBodyOf(sub).appendChild(row.node);
-          sub.rows.push(row);
+          if (sub) {
+            subBodyOf(sub).appendChild(row.node);
+            sub.rows.push(row);
+          } else {
+            mainBody.appendChild(row.node);
+            container.mainRows.push(row);
+          }
           container.rows.push(row);
         });
       } else {
@@ -536,6 +558,28 @@ class ConfigForm {
         break;
       }
 
+      case "enum_or_null": {
+        const select = h("select", { onchange: commit });
+        select.appendChild(h("option", { value: "", text: field.nullLabel || "（自动）" }));
+        field.enum.forEach((item) => {
+          select.appendChild(h("option", { value: String(item.value), text: item.label || String(item.value) }));
+        });
+        control.node = h("div", { class: "control-line" }, [select]);
+        control.read = () => {
+          if (select.value === "") return null;
+          const option = field.enum.find((item) => String(item.value) === select.value);
+          return option ? option.value : select.value;
+        };
+        control.write = (value) => {
+          const text = value === null || value === undefined ? "" : String(value);
+          if (text && !field.enum.some((item) => String(item.value) === text)) {
+            select.appendChild(h("option", { value: text, text: `${text}（当前值，不在候选内）` }));
+          }
+          select.value = text;
+        };
+        break;
+      }
+
       case "enum": {
         const select = h("select", { onchange: commit });
         field.enum.forEach((item) => {
@@ -622,14 +666,32 @@ class ConfigForm {
 
       case "list_enum": {
         const boxes = field.options.map((item) => {
-          const box = h("input", { type: "checkbox", value: String(item.value), onchange: commit });
+          const box = h("input", { type: "checkbox", value: String(item.value) });
           const label = h("label", {}, [box, h("span", { text: item.label || String(item.value) })]);
           return { box, label, value: item.value };
         });
+        const hint = h("span", { class: "muted small" });
+        const refreshLimit = () => {
+          const picked = boxes.filter((item) => item.box.checked).length;
+          if (field.maxItems) {
+            // 选满后禁用未勾选项，避免「点了才报错」
+            boxes.forEach((item) => {
+              item.box.disabled = !item.box.checked && picked >= field.maxItems;
+            });
+            hint.textContent = picked >= field.maxItems
+              ? `最多 ${field.maxItems} 项（已选满）`
+              : `最多可选 ${field.maxItems} 项（已选 ${picked}）`;
+          } else if (field.allowEmpty) {
+            hint.textContent = "都不选 = 不输出";
+          } else {
+            hint.textContent = "";
+          }
+        };
+        boxes.forEach((item) => {
+          item.box.addEventListener("change", () => { refreshLimit(); commit(); });
+        });
         control.node = h("div", { class: "checkbox-grid" }, boxes.map((item) => item.label));
-        if (field.allowEmpty) {
-          control.node.appendChild(h("span", { class: "muted small", text: "都不选 = 不输出" }));
-        }
+        control.node.appendChild(hint);
         control.read = () => {
           const selected = boxes.filter((item) => item.box.checked).map((item) => item.value);
           // 勾选集合没变时保留原有顺序，避免"只是重新渲染就显示已修改"
@@ -643,6 +705,7 @@ class ConfigForm {
         control.write = (value) => {
           const list = (Array.isArray(value) ? value : []).map((item) => String(item));
           boxes.forEach((item) => { item.box.checked = list.includes(String(item.value)); });
+          refreshLimit();
         };
         break;
       }

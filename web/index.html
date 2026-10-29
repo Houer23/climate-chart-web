@@ -68,15 +68,23 @@
             <option value="3x3"></option>
           </datalist>
         </label>
-        <label class="field hidden" id="metric-field">
-          <span class="label">对比元素</span>
-          <select id="metric-input">
+        <div class="field hidden" id="metric-field">
+          <span class="label">对比元素（最多 4 个）</span>
+          <div class="checkbox-grid" id="metric-checks">
+            <label><input type="checkbox" value="minTemp"><span>日均最低气温</span></label>
+            <label><input type="checkbox" value="maxTemp"><span>日均最高气温</span></label>
+            <label><input type="checkbox" value="meanTemp"><span>日均气温</span></label>
+            <label><input type="checkbox" value="rainfall"><span>降水量</span></label>
+            <label><input type="checkbox" value="raindays"><span>降水日数</span></label>
+          </div>
+          <span class="muted small" id="metric-hint">都不勾 = 用配置里的取值</span>
+        </div>
+        <label class="field hidden" id="compare-mode-field">
+          <span class="label">多元素呈现</span>
+          <select id="compare-mode">
             <option value="">（用配置里的取值）</option>
-            <option value="minTemp">日均最低气温</option>
-            <option value="maxTemp">日均最高气温</option>
-            <option value="meanTemp">日均气温</option>
-            <option value="rainfall">降水量</option>
-            <option value="raindays">降水日数</option>
+            <option value="facet">分面：一格一元素</option>
+            <option value="overlay">叠加：同一张图</option>
           </select>
         </label>
         <label class="field checkbox">

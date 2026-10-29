@@ -31,7 +31,7 @@ from core.chart import (
     render_multi_city_chart,
 )
 from core.city_index import CityIndex, CityLookupError, load_city_index
-from core.config_loader import resolve_grid
+from core.config_loader import ConfigError, compare_metrics, resolve_grid
 from core.http_client import CityNotFoundError, FetchError, HttpClient
 from core.models import CityClimate, city_display_name, coord_pair
 from core.parser import NoClimateDataError, ParseError
@@ -606,8 +606,15 @@ def _run_compare_mode(task: Task, client: HttpClient, cfg: dict[str, Any], out_d
         task.log("error", task.result["summary"])
         return
 
-    metric = str((cfg.get("compare") or {}).get("metric", "meanTemp"))
-    task.log("info", f"用于对比的城市：{len(cities)} 个，对比元素：{metric}")
+    try:
+        metrics = compare_metrics(cfg)
+    except ConfigError:
+        metrics = [str((cfg.get("compare") or {}).get("metric", "meanTemp"))]
+    mode = str((cfg.get("compare") or {}).get("mode", "facet")).lower()
+    detail = "、".join(metrics)
+    if len(metrics) > 1:
+        detail += f"（{mode}）"
+    task.log("info", f"用于对比的城市：{len(cities)} 个，对比元素：{detail}")
     base = compare_basename(cfg, cities)
     try:
         charts = _render_charts(
@@ -682,10 +689,24 @@ def apply_request_overrides(cfg: dict[str, Any], request: dict[str, Any]) -> dic
     cfg["fetch"]["cache"] = dict(cfg["fetch"].get("cache") or {})
     if request.get("refresh_cache") or request.get("refresh_index"):
         cfg["fetch"]["cache"]["enabled"] = False
-    if request.get("compare_metric"):
+    # 面板上的「对比元素」只在本次出图生效，不写回配置文件
+    chosen: list[str] = []
+    raw_metrics = request.get("compare_metrics")
+    if isinstance(raw_metrics, list):
+        chosen = [str(item).strip() for item in raw_metrics if str(item).strip()]
+    if chosen:
+        cfg["compare"] = dict(cfg.get("compare") or {})
+        cfg["compare"]["metrics"] = chosen
+        cfg["compare"]["metric"] = chosen[0]      # 单元素路径仍读 metric
+    elif request.get("compare_metric"):
         cfg["compare"] = dict(cfg.get("compare") or {})
         cfg["compare"]["metric"] = request["compare_metric"]
+    if request.get("compare_mode"):
+        cfg["compare"] = dict(cfg.get("compare") or {})
+        cfg["compare"]["mode"] = str(request["compare_mode"])
     if request.get("grid"):
-        cfg["multi"] = dict(cfg.get("multi") or {})
-        cfg["multi"]["grid"] = request["grid"]
+        # 对比模式的排版写到 compare.grid（facet 分面），多图模式仍写 multi.grid
+        target = "compare" if request.get("mode") == "compare" else "multi"
+        cfg[target] = dict(cfg.get(target) or {})
+        cfg[target]["grid"] = request["grid"]
     return cfg

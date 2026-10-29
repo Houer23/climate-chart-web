@@ -132,7 +132,7 @@ TEXT_PLACEHOLDERS: tuple[str, ...] = (
     "metric", "city_count",
 )
 #: 仅对比图 / 多图可用的占位符（单城出图时会出现 KeyError）
-COMPARE_ONLY_PLACEHOLDERS: tuple[str, ...] = ("metric", "city_count")
+COMPARE_ONLY_PLACEHOLDERS: tuple[str, ...] = ("metric", "metrics", "mode", "city_count")
 
 #: 预设颜色（键值表里「颜色」下拉的候选）：前 8 个就是 ``compare.colors`` 的默认序列，
 #: 其余为官方页面配色与常用色。
@@ -187,6 +187,12 @@ class Field:
     allow_empty: bool = True
     extra: bool = False
     readonly: bool = False
+    #: ``list_enum`` 最多可选几项（0 = 不限）
+    max_items: int = 0
+    #: 所属子分组键（``series.<元素>.*`` / ``compare.element_styles.<元素>.*``）
+    subgroup: str = ""
+    #: ``enum_or_null`` 里「空值」选项的文案
+    null_label: str = "（自动）"
     #: 映射类型的语义：键是什么（``city`` = 城市显示名，候选由城市上下文提供）
     key_kind: str = ""
     #: 映射类型的语义：值是什么（``color`` = 颜色，候选见 ``value_options``）
@@ -214,6 +220,9 @@ class Field:
             "allowEmpty": self.allow_empty,
             "extra": self.extra,
             "readonly": self.readonly,
+            "maxItems": self.max_items,
+            "subgroup": self.subgroup,
+            "nullLabel": self.null_label,
             "keyKind": self.key_kind,
             "valueKind": self.value_kind,
             "valueOptions": [{"value": v, "label": t} for v, t in self.value_options],
@@ -231,6 +240,8 @@ class Group:
     series: bool = False       # True = 该组的字段按 series 元素展开
     axes: bool = False         # True = 该组是纵轴（字段来自 AXES_FIELDS）
     prefix: str = ""           # 字段写的是相对路径时，用它补前缀
+    #: 二级子分组 ``(键, 标题)``；字段用 ``Field.subgroup`` 归属，界面渲染成二级折叠块
+    subgroups: tuple[tuple[str, str], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -239,6 +250,7 @@ class Group:
             "desc": self.desc,
             "series": self.series,
             "axes": self.axes,
+            "subgroups": [{"value": k, "label": v} for k, v in self.subgroups],
             "fields": [f.to_dict() for f in group_fields(self)],
         }
 
@@ -389,7 +401,9 @@ OUTPUT_FIELDS: tuple[Field, ...] = (
     T("output.table_name_template", "表格文件名模板",
       FILE_PLACEHOLDERS, "默认不带配置名后缀。"),
     T("output.compare_name_template", "对比图文件名模板",
-      ("city_count", "metric", "cities", "profile")),
+      ("city_count", "metric", "metrics", "mode", "cities", "profile"),
+      "多元素时 {metric} 会自动展开成全部元素（如 minTemp-rainfall），"
+      "overlay 再加 _overlay 后缀；{metrics} 恒为全部元素用 - 连接，{mode} = facet / overlay。"),
     T("output.multi_name_template", "多图文件名模板",
       ("city_count", "cities", "grid", "profile"), "含 {grid} 可避免不同排列互相覆盖。"),
     _f("output.table_formats", "list_enum", "表格格式",
@@ -701,12 +715,62 @@ TABLE_FIELDS: tuple[Field, ...] = (
 # I. compare —— 多城市对比图
 # =========================================================================
 
+#: element_styles 的二级子分组：5 个元素 × （图形类型 / 线型 / 标记）
+ELEMENT_STYLE_SUBGROUPS: tuple[tuple[str, str], ...] = tuple(
+    (key, f"{label}（{key}）") for key, label in SERIES_LABELS.items()
+)
+
+
+def _element_style_fields() -> tuple[Field, ...]:
+    """``compare.element_styles.<元素>.{chart_type,linestyle,marker}``（仅 overlay 生效）。"""
+    result: list[Field] = []
+    for key, _label in SERIES_LABELS.items():
+        result.append(_f(
+            f"compare.element_styles.{key}.chart_type", "enum_or_null", "图形类型",
+            "留空 = 跟随「对比图形类型」（默认跟随状态下降水类画柱、气温类画线）。",
+            enum=CHART_TYPE_ENUM, subgroup=key, null_label="跟随对比图形类型（默认）",
+        ))
+        result.append(_f(
+            f"compare.element_styles.{key}.linestyle", "enum", "线型",
+            enum=LINESTYLE_ENUM, subgroup=key,
+        ))
+        result.append(_f(
+            f"compare.element_styles.{key}.marker", "enum", "标记",
+            enum=MARKER_ENUM, subgroup=key,
+        ))
+    return tuple(result)
+
+
 COMPARE_FIELDS: tuple[Field, ...] = (
-    E("compare.metric", "对比元素", SERIES_ENUM),
+    E("compare.metric", "对比元素（单元素）", SERIES_ENUM,
+      "单个元素；「多元素对比」非空时被覆盖。"),
+    _f("compare.metrics", "list_enum", "多元素对比",
+       "勾选 2–4 个元素：facet 一格一元素，overlay 同图叠加；"
+       "顺序即分面顺序与「同要素一行」图例的列序，只勾 1 个等价于单元素。",
+       options=SERIES_ENUM, max_items=4),
+    E("compare.mode", "多元素呈现方式",
+      (("facet", "分面：一格一元素"), ("overlay", "叠加：同一张图（颜色=城市、线型=元素）")),
+      "仅多元素时生效，单元素仍走原单图路径。"),
+    _f("compare.grid", "grid", "分面排版（列x行）",
+       "auto = 按元素数自动；或「列x行」如 2x2（分隔符 x / × / * / , 均可，前=列、后=行）。"
+       "仅 facet 多元素时生效。",
+       suggestions=("auto", "1x2", "2x1", "2x2", "3x2", "2x3")),
+    _f("compare.facet_figsize", "num2_or_null", "分面画布尺寸",
+       "null = 每格约「对比图画布尺寸」的 70% 宽自动推算。"),
+    E("compare.share_ylim", "分面纵轴量程",
+      (("row", "同一行同单位元素共用量程"), ("none", "各格独立"))),
+    _f("compare.hspace", "num_or_null", "分面行间距", "null = 0.34。"),
+    _f("compare.wspace", "num_or_null", "分面列间距", "null = 0.22。"),
+    E("compare.sort_metric", "多元素排序基准",
+      (("", "自动（第一个元素）"),) + SERIES_ENUM,
+      "只影响多元素：保证各格城市顺序一致。"),
     E("compare.chart_type", "对比图形类型", CHART_TYPE_ENUM),
     _f("compare.figsize", "num2", "对比图画布尺寸", "单位：英寸 [宽, 高]。"),
     T("compare.title_text", "对比图标题模板",
       TEXT_PLACEHOLDERS + ("metric", "city_count")),
+    T("compare.title_text_multi", "多元素对比标题模板",
+      TEXT_PLACEHOLDERS + ("metrics", "metric_count", "city_count"),
+      "仅多元素时使用；{metrics} 用 - 连接全部元素，{metric_count} 为元素个数。"),
     _f("compare.colors", "list_color", "城市配色序列",
        "按顺序分配给城市；不足则循环或自动生成。"),
     _f("compare.color_map", "str_map", "指定城市颜色",
@@ -732,13 +796,25 @@ COMPARE_FIELDS: tuple[Field, ...] = (
        ("name", "按城市名"), ("city_id", "按城市编号"))),
     B("compare.show_value_range", "图例显示数值范围", ""),
     T("compare.label_template", "图例名模板", ("city",)),
-    I("compare.legend_ncol", "图例列数", "0 = 自动。", lo=0, hi=20),
+    I("compare.legend_ncol", "图例列数（旧键）", "0 = 自动；多元素时以「多元素图例列数」优先。",
+      lo=0, hi=20),
+    E("compare.legend.position", "多元素图例位置",
+      (("inside", "坐标区内"), ("bottom", "横轴下方"), ("top", "坐标区上方")),
+      "仅多元素时生效。"),
+    E("compare.legend.layout", "多元素图例排列",
+      (("city", "同城一行"), ("metric", "同要素一行"), ("auto", "自然顺序")),
+      "仅多元素时生效。"),
+    FL("compare.legend.gap", "图例与横轴距离",
+       "坐标区高度比例；position=inside 时为区内相对位置。", lo=0, hi=1, step=0.01),
+    FL("compare.legend.reserve", "底部预留比例",
+       "position=bottom 时给图例腾出的下边距（整图比例）。", lo=0, hi=0.8, step=0.01),
+    I("compare.legend.ncol", "多元素图例列数", "0 = 按排列方式自动。", lo=0, hi=20),
     B("compare.data_labels.show", "显示数值标签", ""),
     FL("compare.data_labels.fontsize", "数值标签字号", "", lo=1, step=0.5),
     S("compare.data_labels.format", "数值标签格式", "",
       suggestions=("{:.1f}", "{:.0f}", "{:.2f}")),
     FL("compare.data_labels.offset", "数值标签偏移", "", step=1, unit="点"),
-)
+) + _element_style_fields()
 
 # =========================================================================
 # J. multi —— 多图（多城市同画布）
@@ -796,7 +872,8 @@ GROUPS: tuple[Group, ...] = (
     Group("table", "H. 表格",
           "行项目与顺序、行名、转置、精度、脚注与 XLSX 样式。", TABLE_FIELDS),
     Group("compare", "I. 多城市对比图",
-          "对比元素、配色、排序、图例与数值标签。", COMPARE_FIELDS),
+          "单元素 / 多元素对比：分面或同图叠加、配色排序、图例与数值标签。",
+          COMPARE_FIELDS, subgroups=ELEMENT_STYLE_SUBGROUPS),
     Group("multi", "J. 多图（多城市同画布）",
           "排列方式、图例方式、纵轴量程策略与间距。", MULTI_FIELDS),
 )
@@ -807,7 +884,8 @@ GROUPS: tuple[Group, ...] = (
 def series_fields(key: str) -> tuple[Field, ...]:
     """把 ``SERIES_FIELDS`` 的相对路径展开为 ``series.<key>.<子项>``。"""
     return tuple(
-        Field(**{**f.__dict__, "path": f"series.{key}.{f.path}"}) for f in SERIES_FIELDS
+        Field(**{**f.__dict__, "path": f"series.{key}.{f.path}", "subgroup": key})
+        for f in SERIES_FIELDS
     )
 
 
@@ -848,6 +926,8 @@ def empty_value(field: Field) -> Any:
     if kind == "num2":
         return [] if field.allow_empty else None
     if kind in ("int", "float", "int_or_null", "num_or_null", "num2_or_null"):
+        return None
+    if kind == "enum_or_null":
         return None
     if kind == "enum":
         return field.enum[0][0] if field.enum else None
@@ -1035,7 +1115,19 @@ def normalize_value(f: Field, raw: Any) -> Any:
             raise FieldError(f.path, f"需要两个数字（如 [12, 6]）或 null，收到 {len(items)} 个")
         return [_to_number(items[0], f.path), _to_number(items[1], f.path)]
 
+    if kind == "enum_or_null":
+        # 空值（null / 空串）表示「不指定」，交给绘图代码回落默认
+        if raw is None or (isinstance(raw, str) and raw.strip() == ""):
+            return None
+        for value, _label in f.enum:
+            if str(raw) == str(value):
+                return value
+        allowed = "、".join(str(v) for v, _ in f.enum)
+        raise FieldError(f.path, f"只能是 {allowed} 之一或留空，收到 {raw!r}")
+
     if kind == "enum":
+        # null 视作空串：部分枚举本身就有 "" 选项（如 marker「不显示」）
+        text = "" if raw is None else str(raw)
         for value, _label in f.enum:
             if f.coerce == "int":
                 try:
@@ -1043,7 +1135,7 @@ def normalize_value(f: Field, raw: Any) -> Any:
                         return int(value)
                 except FieldError:
                     continue
-            elif str(raw) == str(value):
+            elif text == str(value):
                 return value
         allowed = "、".join(str(v) for v, _ in f.enum)
         raise FieldError(f.path, f"只能是 {allowed} 之一，收到 {raw!r}")
@@ -1103,6 +1195,8 @@ def normalize_value(f: Field, raw: Any) -> Any:
                 )
             if match not in result:
                 result.append(match)
+        if f.max_items and len(result) > f.max_items:
+            raise FieldError(f.path, f"最多选择 {f.max_items} 项（当前 {len(result)} 项）")
         if not result and not f.allow_empty:
             raise FieldError(f.path, "至少要选择一项")
         return result

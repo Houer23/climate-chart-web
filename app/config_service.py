@@ -43,6 +43,7 @@ from core.config_loader import (
     _custom_config_sources,          # 只读复用其排序，保证与 core 加载顺序一致
     CUSTOM_PROFILES_DIR,
     DEFAULT_PROFILES_PATH,
+    DEFAULTS,                        # 全量另存时据此剔除「等于默认值」的项
     ConfigError,
     deep_merge,
     dump_config,
@@ -527,6 +528,29 @@ def _prune_empty_extras(node: Any, prefix: str = "") -> None:
             del node[key]
 
 
+def _prune_defaults(node: Any, defaults: Any) -> None:
+    """就地剔除**与内置默认值相同**的项（全量另存用）。
+
+    只递归 ``DEFAULTS`` 里存在的键：Schema 之外的扩展键一律原样保留。
+    容器被剪空后整体删掉；剪完可能只剩 ``description``，配置依然合法——
+    缺的项在加载时由 ``DEFAULTS`` 补齐，语义与剪枝前完全一致。
+    """
+    if not isinstance(node, dict) or not isinstance(defaults, dict):
+        return
+    for key in list(node):
+        if key not in defaults:
+            continue
+        value = node[key]
+        default = defaults[key]
+        if isinstance(value, dict) and isinstance(default, dict) and value:
+            _prune_defaults(value, default)
+            if not value:
+                del node[key]
+                continue
+        if value == default:
+            del node[key]
+
+
 def build_save_payload(name: str, mode: str, values: dict[str, Any],
                        base: Optional[str] = None,
                        description: Optional[str] = None) -> dict[str, Any]:
@@ -600,11 +624,12 @@ def build_save_payload(name: str, mode: str, values: dict[str, Any],
         payload = deep_merge(payload, body)
         return payload
 
-    # 全量：以「当前编辑的配置」为基线解析完整配置
+    # 全量：以「当前编辑的配置」为基线解析完整配置，再剪掉与默认值相同的项
     cfg = resolve(base or name, normalized)
     body = {k: v for k, v in cfg.items()
             if not k.startswith("_") and k not in _RUNTIME_PATHS}
     _prune_empty_extras(body)
+    _prune_defaults(body, DEFAULTS)
     payload = {}
     if description is not None:
         payload["description"] = str(description)

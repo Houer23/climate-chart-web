@@ -151,6 +151,67 @@ check(accepts("series.minTemp.marker", "."), "标记应接受小点 .（matplotl
 
 check(rejects("data.lang", {"a": 1}), "文本字段应拒绝对象")
 
+# ---- 3.5 多元素对比（metrics / mode / facet / legend / element_styles） ----
+
+check(accepts("compare.metrics", ["minTemp", "rainfall"]), "多元素对比应接受元素数组")
+check(schema.normalize_value(field_of("compare.metrics"), ["minTemp", "minTemp", "rainfall"])
+      == ["minTemp", "rainfall"], "多元素应保序去重")
+check(rejects("compare.metrics", ["minTemp", "maxTemp", "meanTemp", "rainfall", "raindays"]),
+      "多元素对比最多 4 个")
+check(rejects("compare.metrics", "minTemp,maxTemp"), "多元素必须是数组，逗号串不行")
+check(rejects("compare.metrics", ["humidity"]), "应拒绝未知元素")
+check(field_of("compare.metrics").max_items == 4, "compare.metrics 应声明 maxItems=4")
+check(accepts("compare.metrics", []), "空数组表示沿用单元素 compare.metric")
+
+check(accepts("compare.mode", "facet") and accepts("compare.mode", "overlay"),
+      "呈现方式应接受 facet / overlay")
+check(rejects("compare.mode", "grid"), "呈现方式应拒绝未声明取值")
+check(accepts("compare.grid", "auto") and accepts("compare.grid", "2x2"),
+      "分面排版应接受 auto 与 列x行")
+check(rejects("compare.grid", "2by2"), "分面排版应拒绝非法写法")
+check(accepts("compare.share_ylim", "row") and rejects("compare.share_ylim", "col"),
+      "分面纵轴量程只接受 row / none")
+
+check(accepts("compare.sort_metric", "") and accepts("compare.sort_metric", "rainfall"),
+      "排序基准应接受空值与已知元素")
+check(rejects("compare.sort_metric", "rain"), "排序基准应拒绝未知元素")
+check(schema.empty_value(field_of("compare.sort_metric")) == "", "排序基准的空值应为空串")
+
+check(accepts("compare.legend.position", "bottom"), "图例位置应接受 bottom")
+check(rejects("compare.legend.position", "left"), "图例位置应拒绝未声明取值")
+check(accepts("compare.legend.layout", "metric"), "图例排列应接受 metric")
+check(rejects("compare.legend.layout", "row"), "图例排列应拒绝未声明取值")
+check(accepts("compare.facet_figsize", None) and accepts("compare.facet_figsize", [14, 8]),
+      "分面画布应接受 null 与 [宽, 高]")
+check(accepts("compare.hspace", None) and rejects("compare.hspace", "auto"),
+      "分面间距应接受 null、拒绝文本")
+
+check(accepts("compare.element_styles.minTemp.chart_type", None),
+      "元素样式的图形类型应接受 null（跟随对比图形类型）")
+check(accepts("compare.element_styles.minTemp.chart_type", "bar"),
+      "元素样式的图形类型应接受合法取值")
+check(rejects("compare.element_styles.minTemp.chart_type", "curve"),
+      "元素样式的图形类型应拒绝未声明取值")
+check(schema.normalize_value(field_of("compare.element_styles.minTemp.chart_type"), "")
+      is None, "空串应归一为 null（跟随）")
+check(schema.empty_value(field_of("compare.element_styles.minTemp.chart_type")) is None,
+      "enum_or_null 的空值应为 null")
+check(accepts("compare.element_styles.rainfall.linestyle", ":")
+      and rejects("compare.element_styles.rainfall.linestyle", "dash"),
+      "元素样式的线型只接受声明过的线型")
+check(accepts("compare.element_styles.rainfall.marker", "v")
+      and rejects("compare.element_styles.rainfall.marker", "q"),
+      "元素样式的标记只接受合法符号")
+
+check(accepts("compare.title_text_multi", "{metrics} 对比 · {city}（{metric_count} 项）"),
+      "多元素标题应接受 {metrics} / {metric_count}")
+check(rejects("compare.title_text_multi", "{elements} 对比"), "多元素标题应拒绝未知占位符")
+check(accepts("output.compare_name_template", "{city_count}城_{metrics}_{mode}"),
+      "对比文件名模板应接受 {metrics} / {mode}")
+check("metrics" in schema.COMPARE_ONLY_PLACEHOLDERS
+      and "mode" in schema.COMPARE_ONLY_PLACEHOLDERS,
+      "多元素占位符应列入「仅对比模式可用」白名单")
+
 # ---- 4. 映射型字段的语义元信息与空值 -------------------------------------
 
 color_map_field = field_of("compare.color_map")
