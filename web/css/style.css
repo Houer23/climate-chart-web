@@ -214,11 +214,21 @@ body.splitting { cursor: col-resize; user-select: none; }
 
 .target-input { padding: 10px 12px 0; }
 .target-actions { display: flex; gap: 8px; margin-top: 6px; }
+/* 模式附加项：按内容排布（flex 换行），不再用 auto-fit 网格——
+   网格会把每个格子拉到等宽，短标签旁边出现大块空白，长标签又会挤成两行。 */
 .inline-fields {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 8px 12px; padding: 10px 12px 12px;
+  display: flex; flex-wrap: wrap; align-items: flex-start;
+  gap: 8px 14px; padding: 10px 12px 12px;
 }
-#grid-field, #metric-field { min-width: 120px; }
+.inline-fields > .field { min-width: 0; }
+.inline-fields .field .label { white-space: nowrap; }
+.inline-fields > .field.checkbox { flex: 0 0 auto; margin-top: 2px; }
+#grid-field { flex: 0 0 168px; }
+#compare-mode-field { flex: 0 0 208px; }
+/* 对比元素是一组复选，独占一整行并排在最前，避免挤在半个格子里换三行；
+   这样「排列 + 多元素呈现」才能并排落在同一行，不留半行空白。 */
+#metric-field { flex: 1 1 100%; order: -1; }
+#metric-field .checkbox-grid { gap: 5px 14px; }
 .resolved { padding: 0 12px 12px; min-height: 18px; }
 
 /* ---------------- 配置表单 ---------------- */
@@ -227,6 +237,8 @@ body.splitting { cursor: col-resize; user-select: none; }
   padding: 8px 12px; border-bottom: 1px solid var(--border);
 }
 .config-toolbar input { flex: 1 1 auto; }
+/* 工具条里的勾选标签不折行（「只看已修改」曾被挤成两行） */
+.config-toolbar .field.checkbox, .config-toolbar .field.checkbox span { white-space: nowrap; }
 .config-groups { overflow: auto; padding: 8px 10px 16px; flex: 1 1 auto; }
 
 .group { border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 8px; background: var(--panel-soft); }
@@ -237,8 +249,24 @@ body.splitting { cursor: col-resize; user-select: none; }
 .group > summary::-webkit-details-marker { display: none; }
 .group > summary::before { content: "▸"; color: var(--muted); transition: transform .15s; }
 .group[open] > summary::before { transform: rotate(90deg); }
-.group .group-desc { font-weight: 400; color: var(--muted); font-size: 12px; }
-.group .group-count { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 400; }
+/* 标题栏单行：说明过长就省略，避免标题栏被撑成两行（吸顶时更明显） */
+.group > summary > span:first-child { white-space: nowrap; }
+.group .group-desc {
+  flex: 1 1 auto; min-width: 0;
+  font-weight: 400; color: var(--muted); font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.group .group-count {
+  margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 400;
+  white-space: nowrap;
+}
+/* 一级分组标题吸顶：滚动长配置时随时能点标题折叠（子分组不吸顶，避免层层叠） */
+.config-groups > .group > summary {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--panel-soft);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+.config-groups > .group[open] > summary { box-shadow: 0 1px 0 var(--border); }
 .group-body { padding: 6px 10px 12px; display: flex; flex-direction: column; gap: 9px; }
 
 .frow {

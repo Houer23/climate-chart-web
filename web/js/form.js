@@ -367,7 +367,8 @@ class ConfigForm {
       const details = h("details", { class: "group", open: group.key === "data" }, [
         h("summary", {}, [
           h("span", { text: group.title }),
-          h("span", { class: "group-desc", text: group.desc || "" }),
+          // 说明在标题栏里单行省略，完整文案放 title，悬停可看
+          h("span", { class: "group-desc", text: group.desc || "", title: group.desc || "" }),
           counter,
         ]),
         body,
