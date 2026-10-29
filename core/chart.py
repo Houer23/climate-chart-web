@@ -961,7 +961,8 @@ def _draw_data_labels(ax, scfg: dict[str, Any], x: np.ndarray, y: np.ndarray,
     offset = float(dl.get("offset", 4.0))
     position = str(dl.get("position", "top")).lower()
     fontsize = float(dl.get("fontsize", 8.5))
-    step = _label_step(ax, x, y, fmt, fontsize, bar_width)
+    # auto_skip 关闭时不做隔项（每个都标，密集时可能重叠）
+    step = _label_step(ax, x, y, fmt, fontsize, bar_width) if dl.get("auto_skip", True) else 1
     for index, (xi, yi) in enumerate(zip(x, y)):
         if not np.isfinite(yi):
             continue

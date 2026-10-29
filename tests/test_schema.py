@@ -194,6 +194,12 @@ check(accepts("compare.element_styles.rainfall.data_labels.format", "")
       "元素级标签格式应接受空串（跟随）与模板")
 check(accepts("compare.element_styles.rainfall.data_labels.offset", 6),
       "元素级标签偏移应接受数字")
+check(accepts("compare.data_labels.auto_skip", True)
+      and accepts("compare.data_labels.auto_skip", False),
+      "标签自动隔项应接受 true / false")
+check(rejects("compare.data_labels.auto_skip", "auto"), "标签自动隔项应拒绝非布尔值")
+check(field_of("compare.data_labels.auto_skip").kind == "bool",
+      "标签自动隔项应是布尔开关")
 check(accepts("compare.bar_fill", "hatch") and rejects("compare.bar_fill", "none"),
       "对比柱填充方式应接受 solid / hollow / hatch")
 check(accepts("compare.bar_linewidth", 0.8), "对比柱边线宽应接受浮点")

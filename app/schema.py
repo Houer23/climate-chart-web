@@ -897,6 +897,8 @@ COMPARE_FIELDS: tuple[Field, ...] = (
     S("compare.data_labels.format", "数值标签格式", "",
       suggestions=("{:.1f}", "{:.0f}", "{:.2f}")),
     FL("compare.data_labels.offset", "数值标签偏移", "", step=1, unit="点"),
+    B("compare.data_labels.auto_skip", "标签自动隔项",
+      "柱宽放不下标签时自动每隔几项标一次；关闭则每个都标（月份多时可能重叠）。"),
 ) + _element_style_fields()
 
 # =========================================================================

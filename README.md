@@ -168,7 +168,7 @@ r3h / hr3               连写等价于 r3,h（标记之间可省略逗号）
 
 ### 3.3 按数据类型的输入验证
 
-`app/schema.py` 为全部 540 个配置项声明了**类型 / 枚举 / 范围 / 说明 / 分组**，前端据此渲染控件并即时校验，
+`app/schema.py` 为全部 541 个配置项声明了**类型 / 枚举 / 范围 / 说明 / 分组**，前端据此渲染控件并即时校验，
 后端用同一份规则做权威校验（绕过前端也进不了渲染流程）。分组内部还可再分二级小节：
 D 组把 `figure.legend.*` 的 **14 项图例参数**收进「图例（单图 / 对比图 / 多图通用）」小节，
 I 组把 5 个元素的样式收进各自的元素小节。
@@ -273,6 +273,8 @@ series:
 
 **柱状对比的标签会跟着柱子走**：同一月份的多个城市标签原本都画在同一个 x 上（叠在一起），
 现在按各城市的柱偏移绘制；柱宽放不下标签时**自动隔项**（例如 1/4/7/10 月），不再糊成一团。
+隔项由「数值标签 → 标签自动隔项」控制（`compare.data_labels.auto_skip`，**默认开**）——
+关掉就每个点都标，月份多时可能重叠。
 
 **数值标签可按元素单独控制**：`compare.data_labels.*` 是全局默认，
 `compare.element_styles.<元素>.data_labels.*`（`show` / `fontsize` / `format` / `offset`）为元素级覆盖，
@@ -384,7 +386,7 @@ DrawClimateChartWeb/
 ## 7. 测试
 
 ```bash
-python tests/test_schema.py           # 配置 Schema：覆盖完整性 + 默认值自洽 + 类型校验严格性（670 项）
+python tests/test_schema.py           # 配置 Schema：覆盖完整性 + 默认值自洽 + 类型校验严格性（674 项）
 python tests/test_config_service.py   # 配置服务：校验/模式感知/保存/另存/差量洁净度/全量剔除默认/界面状态（约 260 项，随自定义配置数变化）
 python tests/test_api.py              # 接口端到端：真实 HTTP + SSE + 出图（含多元素 facet/overlay、城市名统一、全黑多城）+ 分层校验（138 项）
 python tests/test_frontend.py         # 前端静态自检：括号配平 / DOM 引用 / 控件类型覆盖 / 布局约束（103 项）

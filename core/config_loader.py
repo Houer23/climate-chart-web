@@ -574,6 +574,7 @@ DEFAULTS: dict[str, Any] = {
             "fontsize": 8.0,
             "format": "{:.1f}",
             "offset": 4.0,
+            "auto_skip": True,              # 柱宽放不下标签时自动隔项（关掉则每个都标）
         },
     },
 
