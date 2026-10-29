@@ -289,6 +289,7 @@ profiles:
 | `bar_width` | float | `0.55` | 柱宽（`bar` 专有） |
 | `bar_fill` | str | `"solid"` | 柱填充方式：`solid` 实心 / `hollow` 空心（仅边框；边色缺省取系列色、线宽缺省 1.2）/ `hatch` 纹理填充（不填底色、只画纹理，全黑同色场景也清晰） |
 | `bar_hatch` | str | `""` | 纹理样式（matplotlib hatch：`/` `\` `\|` `-` `+` `x` `o` `.` `*`，重复字符可加密如 `///`）；空 = `/` |
+| `bar_fill_color` | color | `"none"` | 纹理模式的底色：`none` = 只画纹理；给颜色则先铺底色再叠纹理（与纹理色要有对比） |
 | `bar_edgecolor` / `bar_linewidth` | — | `"none"` / `0.0` | 柱边线；`hatch` 模式下也是纹理颜色 |
 | `bar_align` | str | `"center"` | 柱对齐 `center`/`edge` |
 | `smooth_points` | int | `240` | 平滑曲线插值点数（`smooth` 专有，自实现三次 Hermite 插值） |
@@ -366,6 +367,8 @@ profiles:
 | `bar_hatch` | str | `""` | 纹理样式（全局兜底，同 `series.bar_hatch`）；空 = `/` |
 | `bar_fill_cycle` | array | `["solid"]` | **按城市**轮换的柱填充方式，非空时覆盖 `bar_fill`（如 `[solid, hollow, hatch]`） |
 | `bar_hatch_cycle` | array | `[]` | **按城市**轮换的柱纹理样式，非空时覆盖 `bar_hatch`（留空项 = 该城市不加纹理） |
+| `bar_fill_color` | color | `"none"` | 纹理模式的底色（全局兜底），`none` = 只画纹理 |
+| `bar_fill_color_cycle` | array | `[]` | **按城市**轮换的纹理底色，非空时覆盖 `bar_fill_color` |
 | `bar_edgecolor` / `bar_linewidth` | — | `"none"` / `0.0` | 柱边线；`hollow` 时线宽缺省 1.2 |
 | `sort_by` | str | `"value_desc"` | `none` / `value_desc` / `value_asc` / `name` / `city_id` |
 | `show_value_range` | bool | `true` | 图例中附加该城市的数值范围 |

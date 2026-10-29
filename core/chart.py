@@ -768,7 +768,8 @@ def _bar_style(scfg: dict[str, Any], color: str, index: int = 0) -> dict[str, An
       （给了 ``bar_hatch`` 时在实心上叠加纹理，纹理色取边框色）；
     * ``hollow``：空心只画边框；边框色未指定时退回系列色，线宽未指定时取 1.2，
       避免"选了空心却什么都看不见"；
-    * ``hatch``：纹理填充；``bar_hatch`` 为空时用 ``/``，纹理色与边框同色。
+    * ``hatch``：纹理填充；``bar_hatch`` 为空时用 ``/``，纹理色与边框同色；
+      ``bar_fill_color`` / ``bar_fill_color_cycle`` 可给纹理铺一层底色（``none`` = 只画纹理）。
 
     未知取值按 ``solid`` 处理，保证旧配置与手写配置不会因为拼写问题画不出柱子。
     """
@@ -787,6 +788,13 @@ def _bar_style(scfg: dict[str, Any], color: str, index: int = 0) -> dict[str, An
         hatch = str(hatch_cycle[int(index) % len(hatch_cycle)] or "")
     else:
         hatch = str(scfg.get("bar_hatch", "") or "")
+    # 纹理底色：*_cycle 优先（多城市对比按城市轮换），否则用全局单值；none / 空 = 只画纹理
+    color_cycle = [item for item in (scfg.get("bar_fill_color_cycle") or []) if str(item).strip()]
+    if color_cycle:
+        background = str(color_cycle[int(index) % len(color_cycle)]).strip()
+    else:
+        background = str(scfg.get("bar_fill_color", "none") or "none").strip()
+    has_background = background.lower() not in ("", "none")
 
     style: dict[str, Any] = {"facecolor": color}
     if mode == "hollow":
@@ -794,8 +802,8 @@ def _bar_style(scfg: dict[str, Any], color: str, index: int = 0) -> dict[str, An
         style["edgecolor"] = edge if has_edge else color
         style["linewidth"] = linewidth if linewidth > 0 else 1.2
     elif mode == "hatch":
-        # 不填底色、只画纹理：同色（尤其全黑）时底色会把纹理吃掉
-        style["facecolor"] = "none"
+        # 默认不填底色（同色时底色会把纹理吃掉）；给了 bar_fill_color 就先铺底色再叠纹理
+        style["facecolor"] = background if has_background else "none"
         style["hatch"] = hatch or "/"
         style["edgecolor"] = edge if has_edge else color
         style["linewidth"] = linewidth if linewidth > 0 else 1.0

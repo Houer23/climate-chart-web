@@ -155,6 +155,13 @@ check(accepts("series.rainfall.bar_fill", "hollow")
 check(rejects("series.rainfall.bar_fill", "gradient"), "柱填充方式应拒绝未声明取值")
 check(accepts("series.rainfall.bar_hatch", "///"), "柱纹理应接受 hatch 写法")
 check(accepts("series.rainfall.bar_hatch", ""), "柱纹理应允许留空（默认 /）")
+check(accepts("series.rainfall.bar_fill_color", "none")
+      and accepts("series.rainfall.bar_fill_color", "#dbe6f0"),
+      "柱纹理底色应接受 none 与颜色字面量")
+check(accepts("compare.bar_fill_color", "#eef2f7"), "对比柱纹理底色应接受颜色")
+check(accepts("compare.bar_fill_color_cycle", ["#dbe6f0", "#f7eef2"]),
+      "按城市纹理底色应接受颜色数组")
+check(accepts("compare.bar_fill_color_cycle", []), "按城市纹理底色应允许空数组（不覆盖）")
 check(accepts("compare.bar_fill", "hatch") and rejects("compare.bar_fill", "none"),
       "对比柱填充方式应接受 solid / hollow / hatch")
 check(accepts("compare.bar_linewidth", 0.8), "对比柱边线宽应接受浮点")

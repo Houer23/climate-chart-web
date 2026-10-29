@@ -439,6 +439,7 @@ status, payload = api("POST", "/api/render", {
     "mode": "city", "cities": ["237"], "profile": "default",
     "values": {**FAST, "series.rainfall.bar_fill": "hatch",
                "series.rainfall.bar_hatch": "///",
+               "series.rainfall.bar_fill_color": "#dbe6f0",
                "output.name_template": "_apitest_bar_{profile}"},
     "save_files": True,
 })

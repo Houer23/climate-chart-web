@@ -168,7 +168,7 @@ r3h / hr3               连写等价于 r3,h（标记之间可省略逗号）
 
 ### 3.3 按数据类型的输入验证
 
-`app/schema.py` 为全部 508 个配置项声明了**类型 / 枚举 / 范围 / 说明 / 分组**，前端据此渲染控件并即时校验，
+`app/schema.py` 为全部 515 个配置项声明了**类型 / 枚举 / 范围 / 说明 / 分组**，前端据此渲染控件并即时校验，
 后端用同一份规则做权威校验（绕过前端也进不了渲染流程）。分组内部还可再分二级小节：
 D 组把 `figure.legend.*` 的 **14 项图例参数**收进「图例（单图 / 对比图 / 多图通用）」小节，
 I 组把 5 个元素的样式收进各自的元素小节。
@@ -258,7 +258,18 @@ compare:
   style_dimension: city
 ```
 
-`hatch` 模式不填底色、只画纹理，所以全黑时条纹仍然清晰，图例色块同步。
+`hatch` 模式**默认不填底色**（只画线条），所以全黑时条纹仍然清晰，图例色块同步。
+需要底色时设 `bar_fill_color`（对比图另有按城市的 `bar_fill_color_cycle`）：
+
+```yaml
+series:
+  rainfall:
+    bar_fill: hatch
+    bar_hatch: "///"
+    bar_fill_color: "#dbe6f0"     # 浅灰蓝底 + 蓝色斜纹；none = 只画纹理（默认）
+```
+
+底色与纹理色要有对比，否则纹理会被底色吃掉。
 
 ---
 
@@ -340,10 +351,10 @@ DrawClimateChartWeb/
 ## 7. 测试
 
 ```bash
-python tests/test_schema.py           # 配置 Schema：覆盖完整性 + 默认值自洽 + 类型校验严格性（620 项）
-python tests/test_config_service.py   # 配置服务：校验/模式感知/保存/另存/差量洁净度/全量剔除默认/界面状态（约 235 项，随自定义配置数变化）
-python tests/test_api.py              # 接口端到端：真实 HTTP + SSE + 出图（含多元素 facet/overlay、城市名统一、全黑多城）+ 分层校验（131 项）
-python tests/test_frontend.py         # 前端静态自检：括号配平 / DOM 引用 / 控件类型覆盖 / 布局约束（95 项）
+python tests/test_schema.py           # 配置 Schema：覆盖完整性 + 默认值自洽 + 类型校验严格性（631 项）
+python tests/test_config_service.py   # 配置服务：校验/模式感知/保存/另存/差量洁净度/全量剔除默认/界面状态（约 257 项，随自定义配置数变化）
+python tests/test_api.py              # 接口端到端：真实 HTTP + SSE + 出图（含多元素 facet/overlay、城市名统一、全黑多城）+ 分层校验（138 项）
+python tests/test_frontend.py         # 前端静态自检：括号配平 / DOM 引用 / 控件类型覆盖 / 布局约束（103 项）
 ```
 
 `test_api.py` 需要联网取一次气候数据（命中缓存则不联网）；其余三个完全离线。
@@ -382,12 +393,14 @@ python tests/test_frontend.py         # 前端静态自检：括号配平 / DOM 
 `core/` 是参考项目 `src/` 的复制。目前的本地增强集中在「柱状填充 + 多城市对比的样式维度」：
 
 * `core/config_loader.py`
-  * `series.*`：`bar_fill` / `bar_hatch`；
-  * `compare.*`：`bar_fill` / `bar_hatch` / `bar_edgecolor` / `bar_linewidth`，
-    `bar_fill_cycle` / `bar_hatch_cycle`（按城市轮换），`style_dimension`（city / metric / hybrid）；
+  * `series.*`：`bar_fill` / `bar_hatch` / `bar_fill_color`；
+  * `compare.*`：`bar_fill` / `bar_hatch` / `bar_fill_color` / `bar_edgecolor` / `bar_linewidth`，
+    `bar_fill_cycle` / `bar_hatch_cycle` / `bar_fill_color_cycle`（按城市轮换），
+    `style_dimension`（city / metric / hybrid）；
   * `validate_config`：新增上述枚举与数组校验。
 * `core/chart.py`
-  * `_bar_style()`：新增索引参数，支持按城市轮换填充/纹理；`hatch` 改为不填底色（同色也清晰）；
+  * `_bar_style()`：新增索引参数，支持按城市轮换填充/纹理/底色；`hatch` 默认不填底色
+    （同色也清晰），给了 `bar_fill_color` 才铺底色；
   * `_compare_metric_style()`：按 `style_dimension` 分配「线型/标记」维度，元素级 `chart_type` 优先；
   * 单元素 / 分面 / 叠加三条对比路径统一使用它——**分面此前完全忽略 `element_styles`**；
   * `element_styles.<元素>.marker` 显式设为「不显示」（空串）现在会生效（原先被当空值回落）；

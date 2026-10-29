@@ -676,6 +676,10 @@ SERIES_FIELDS: tuple[Field, ...] = (
       "matplotlib hatch：/ \\ | - + x o O . *；重复字符可加密（如 ///）；留空 = /。"
       "纹理填充时生效；实心下填写则在纯色上叠加纹理。",
       suggestions=("/", "//", "///", "\\\\", "|", "-", "+", "x", "o", "O", ".", "*")),
+    C("bar_fill_color", "柱纹理底色",
+      "仅「纹理填充」时有效：none / 留空 = 只画纹理（默认）；给颜色则先铺底色再叠纹理"
+      "（底色与纹理色要有对比，否则纹理看不见）。",
+      specials=("none",)),
     C("bar_edgecolor", "柱边线色", "", specials=("none", "auto")),
     FL("bar_linewidth", "柱边线宽", "", lo=0, step=0.1),
     E("bar_align", "柱对齐", (("center", "居中"), ("edge", "靠边"))),
@@ -834,6 +838,11 @@ COMPARE_FIELDS: tuple[Field, ...] = (
     _f("compare.bar_hatch_cycle", "list_str", "柱纹理样式（按城市轮换）",
        "按城市顺序轮换；留空项 = 该城市不加纹理；非空时覆盖全局兜底。",
        suggestions=("/", "//", "///", "\\\\", "x", "o", "O", ".", "*")),
+    C("compare.bar_fill_color", "柱纹理底色（全局兜底）",
+      "仅「纹理填充」时有效：none = 只画纹理（默认）；给颜色则先铺底色再叠纹理。",
+      specials=("none",)),
+    _f("compare.bar_fill_color_cycle", "list_color", "柱纹理底色（按城市轮换）",
+       "按城市顺序轮换，非空时覆盖全局兜底；底色与纹理色要有对比。"),
     C("compare.bar_edgecolor", "柱边线色", "", specials=("none",)),
     FL("compare.bar_linewidth", "柱边线宽", "空心时留 0 会自动取 1.2。", lo=0, step=0.1),
     E("compare.sort_by", "排序方式",
@@ -1153,7 +1162,8 @@ SERIES_FAMILIES: tuple[tuple[str, str], ...] = (
 _SERIES_FAMILY_PATHS: dict[str, tuple[str, ...]] = {
     "line": ("linewidth", "linestyle", "marker", "markersize", "markerfacecolor",
              "markeredgecolor", "markeredgewidth", "markevery"),
-    "bar": ("bar_width", "bar_fill", "bar_hatch", "bar_edgecolor", "bar_linewidth", "bar_align"),
+    "bar": ("bar_width", "bar_fill", "bar_hatch", "bar_fill_color", "bar_edgecolor",
+            "bar_linewidth", "bar_align"),
     "area": ("smooth_points", "fill_alpha", "fill_between_key"),
     "labels": ("data_labels.",),
 }

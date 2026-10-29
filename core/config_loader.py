@@ -78,6 +78,7 @@ def _series(**overrides: Any) -> dict[str, Any]:
         "bar_width": 0.55,
         "bar_fill": "solid",         # solid 实心 | hollow 空心（仅边框）| hatch 纹理填充
         "bar_hatch": "",             # 纹理样式（matplotlib hatch，如 "/" "//" "\\" "x" "o"）；空 = "/"
+        "bar_fill_color": "none",    # 纹理模式的底色：none = 只画纹理（默认），给颜色则先铺底色
         "bar_edgecolor": "none",
         "bar_linewidth": 0.0,
         "bar_align": "center",
@@ -527,6 +528,8 @@ DEFAULTS: dict[str, Any] = {
         "bar_hatch": "",                    # 纹理样式；空 = "/"
         "bar_fill_cycle": ["solid"],        # 按城市轮换的填充方式（多城市对比；非空时覆盖 bar_fill）
         "bar_hatch_cycle": [],              # 按城市轮换的纹理样式（非空时覆盖 bar_hatch；空 = 不覆盖）
+        "bar_fill_color": "none",           # 纹理模式的底色（全局兜底）：none = 只画纹理
+        "bar_fill_color_cycle": [],         # 按城市轮换的纹理底色（非空时覆盖 bar_fill_color）
         "style_dimension": "city",          # 线型/标记按谁轮换：city（默认）| metric（旧行为）| hybrid
         "bar_edgecolor": "none",            # 柱边框色（solid 时也可用来勾边）
         "bar_linewidth": 0.0,               # 柱边框线宽；hollow 下留 0 会自动取 1.2
