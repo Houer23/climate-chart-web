@@ -319,27 +319,34 @@ class ConfigForm {
     this.groups.forEach((group) => {
       const container = this.groupNodes.get(group.key);
       if (!container) return;
+      // blocks = 主区 + 各二级小节 + 各三级小节，逐块过滤（避免主区字段被漏掉）
+      const blocks = container.blocks || [{ details: null, rows: container.rows }];
+      const visibleRows = new Map();
       let visibleTotal = 0;
-      // 有二级子分组时，主区字段（不属于任何子分组）也要参与过滤与计数
-      const targets = container.subgroups.length
-        ? [{ rows: container.mainRows || [], details: null }, ...container.subgroups]
-        : [container];
-      targets.forEach((target) => {
-        let visible = 0;
-        target.rows.forEach((row) => {
+      blocks.forEach((block) => {
+        let shown = 0;
+        block.rows.forEach((row) => {
           const field = row.field;
           const haystack = `${field.label} ${field.path} ${field.desc}`.toLowerCase();
           const matchKeyword = !this.keyword || haystack.includes(this.keyword);
           const matchChanged = !this.onlyChanged || this.isChanged(field.path);
           const show = matchKeyword && matchChanged;
           row.node.classList.toggle("hidden", !show);
-          if (show) visible += 1;
+          visibleRows.set(row, show);
+          if (show) shown += 1;
         });
-        if (target.details) {
-          target.details.classList.toggle("hidden", visible === 0);
-          if (this.keyword && visible > 0) target.details.open = true;
+        if (block.details) {
+          block.details.classList.toggle("hidden", shown === 0);
+          if (this.keyword && shown > 0) block.details.open = true;
         }
-        visibleTotal += visible;
+        visibleTotal += shown;
+      });
+      // 二级小节自身：直属行 + 其下三级小节，全部不可见时才隐藏
+      (container.subgroups || []).forEach((sub) => {
+        const countOf = (rows) => rows.reduce((n, row) => n + (visibleRows.get(row) ? 1 : 0), 0);
+        let shown = countOf(sub.rows);
+        sub.families.forEach((fam) => { shown += countOf(fam.rows); });
+        sub.details.classList.toggle("hidden", shown === 0);
       });
       container.details.classList.toggle("hidden", visibleTotal === 0);
       if (this.keyword && visibleTotal > 0) container.details.open = true;
@@ -384,34 +391,62 @@ class ConfigForm {
         ? group.subgroups
         : (group.key === "series" && group.seriesKeys ? group.seriesKeys : []);
       if (subgroupDefs.length) {
-        // 二级分组：绘图元素（series）/ 对比的元素样式（compare.element_styles）
+        // 二级分组：绘图元素（series）/ 各对象小节（标题、图例、量程…）
         container.subgroups = [];
         const mainBody = h("div", {});
         body.appendChild(mainBody);        // 不属于子分组的字段仍排在前面
         const rowsByKey = new Map();
-        subgroupDefs.forEach((item) => {
+        subgroupDefs.forEach((item, index) => {
           const subBody = h("div", { class: "group-body" });
-          const subDetails = h("details", { class: "group", open: item.value === "maxTemp" }, [
+          const subDetails = h("details", {
+            // 展开大类时顺手展开第一个小节，避免「点开还要再点一层」
+            class: "group",
+            open: index === 0 || item.value === "maxTemp" || item.value === "basic",
+          }, [
             h("summary", {}, [h("span", { text: item.label })]),
             subBody,
           ]);
           body.appendChild(subDetails);
-          const sub = { details: subDetails, rows: [] };
+          const sub = { details: subDetails, body: subBody, rows: [], families: new Map() };
           container.subgroups.push(sub);
           rowsByKey.set(item.value, sub);
         });
         (group.fields || []).forEach((field) => {
-          const key = field.subgroup || field.path.split(".")[1];
-          const sub = rowsByKey.get(key);
+          const raw = field.subgroup || field.path.split(".")[1];
+          const [top, family] = String(raw).split("|");
+          const sub = rowsByKey.get(top);
           const row = this.buildRow(field);
-          if (sub) {
-            subBodyOf(sub).appendChild(row.node);
-            sub.rows.push(row);
-          } else {
+          if (!sub) {
             mainBody.appendChild(row.node);
             container.mainRows.push(row);
+          } else if (family) {
+            // 三级：元素内再按「基础 / 线与标记 / 柱状 / 数值标签」折叠
+            let fam = sub.families.get(family);
+            if (!fam) {
+              const famBody = h("div", { class: "group-body" });
+              const famDetails = h("details", { class: "group", open: family === "basic" }, [
+                h("summary", {}, [h("span", { text: field.subgroupLabel || family })]),
+                famBody,
+              ]);
+              sub.body.appendChild(famDetails);
+              fam = { details: famDetails, body: famBody, rows: [] };
+              sub.families.set(family, fam);
+            }
+            fam.body.appendChild(row.node);
+            fam.rows.push(row);
+          } else {
+            sub.body.appendChild(row.node);
+            sub.rows.push(row);
           }
           container.rows.push(row);
+        });
+        // 过滤与计数按「块」进行：主区 / 各二级小节 / 各三级小节
+        container.blocks = [{ details: null, rows: container.mainRows }];
+        container.subgroups.forEach((sub) => {
+          container.blocks.push({ details: sub.details, rows: sub.rows });
+          sub.families.forEach((fam) => {
+            container.blocks.push({ details: fam.details, rows: fam.rows });
+          });
         });
       } else {
         (group.fields || []).forEach((field) => {

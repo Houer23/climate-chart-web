@@ -188,8 +188,11 @@ class Field:
     readonly: bool = False
     #: ``list_enum`` 最多可选几项（0 = 不限）
     max_items: int = 0
-    #: 所属子分组键（``series.<元素>.*`` / ``compare.element_styles.<元素>.*``）
+    #: 所属子分组键（``series.<元素>.*`` / ``compare.element_styles.<元素>.*``）；
+    #: 形如 ``"maxTemp|line"`` 时表示三级：元素内再按属性族分小节
     subgroup: str = ""
+    #: 三级小节（属性族）的显示名，如「线与标记」「柱状」
+    subgroup_label: str = ""
     #: ``enum_or_null`` 里「空值」选项的文案
     null_label: str = "（自动）"
     #: 映射类型的语义：键是什么（``city`` = 城市显示名，候选由城市上下文提供）
@@ -221,6 +224,7 @@ class Field:
             "readonly": self.readonly,
             "maxItems": self.max_items,
             "subgroup": self.subgroup,
+            "subgroupLabel": self.subgroup_label,
             "nullLabel": self.null_label,
             "keyKind": self.key_kind,
             "valueKind": self.value_kind,
@@ -255,16 +259,19 @@ class Group:
 
 
 def group_fields(group: "Group") -> tuple[Field, ...]:
-    """把分组里的字段展开为带完整点路径的字段列表。"""
+    """把分组里的字段展开为带完整点路径的字段列表（并按「对象」打二级分组标记）。"""
     if group.series:
-        return tuple(f for key in SERIES_KEYS for f in series_fields(key))
-    if group.axes:
-        return axes_fields(group.key)
-    if group.prefix:
-        return tuple(
+        fields = tuple(f for key in SERIES_KEYS for f in series_fields(key))
+    elif group.axes:
+        fields = axes_fields(group.key)
+    elif group.prefix:
+        fields = tuple(
             Field(**{**f.__dict__, "path": f"{group.prefix}.{f.path}"}) for f in group.fields
         )
-    return group.fields
+    else:
+        fields = group.fields
+    rules = SUBTREE.get(group.key, ((), ()))[0]
+    return _tag_subgroups(fields, rules) if rules else fields
 
 
 class FieldError(ValueError):
@@ -322,6 +329,14 @@ def C(path: str, label: str, desc: str = "",
 # =========================================================================
 # A. data —— 数据与字段口径
 # =========================================================================
+
+#: 纵轴内部的小节：基础 / 轴标题 / 量程与刻度 / 轴脊（二级分组定义在 GROUPS 之后复用）
+AXES_FAMILIES: tuple[tuple[str, str], ...] = (
+    ("basic", "基础"),
+    ("label", "轴标题"),
+    ("range", "量程与刻度"),
+    ("spine", "轴脊"),
+)
 
 DATA_FIELDS: tuple[Field, ...] = (
     S("data.lang", "语言版本",
@@ -918,15 +933,262 @@ GROUPS: tuple[Group, ...] = (
           "排列方式、图例方式、纵轴量程策略与间距。", MULTI_FIELDS),
 )
 
+# =========================================================================
+# 二级分组：把「处理同一个对象」的字段收进同一个小节
+# =========================================================================
+#: 大类 → 打标规则 ``(路径前缀, 子分组键)``；按顺序匹配、命中即止。
+#: 字段若已显式声明 ``subgroup``（如 compare.element_styles 的元素名、axes 的族），
+#: 这里不会再覆盖它。
+SUBTREE_RULES: dict[str, tuple[tuple[str, str], ...]] = {
+    "data": (
+        ("data.coord.", "coord"),
+        ("data.city_short_name", "city"),
+        ("data.", "basic"),
+    ),
+    "fetch": (
+        ("fetch.cache.", "cache"),
+        ("fetch.headers", "raw"),
+        ("fetch.save_raw", "raw"),
+        ("fetch.raw_dir", "raw"),
+        ("fetch.base_url", "path"),
+        ("fetch.data_path", "path"),
+        ("fetch.city_index_path", "path"),
+        ("fetch.verify_ssl", "net"),
+        ("fetch.proxy", "net"),
+        ("fetch.use_env_proxy", "net"),
+        ("fetch.", "retry"),
+    ),
+    "output": (
+        ("output.out_dir", "dir"),
+        ("output.name_template", "name"),
+        ("output.table_name_template", "name"),
+        ("output.compare_name_template", "name"),
+        ("output.multi_name_template", "name"),
+        ("output.table_formats", "format"),
+        ("output.chart_formats", "format"),
+        ("output.chart_dpi", "format"),
+        ("output.", "misc"),
+    ),
+    "figure": (
+        ("figure.title.", "title"),
+        ("figure.subtitle.", "subtitle"),
+        ("figure.legend.", "legend"),
+        ("figure.grid.", "grid"),
+        ("figure.background.", "bands"),
+        ("figure.zeroline.", "zeroline"),
+        ("figure.mean_rain_line.", "rainline"),
+        ("figure.annotation.", "annotation"),
+        ("figure.credit.", "credit"),
+        ("figure.subplots_adjust.", "layout"),
+        ("figure.layout", "layout"),
+        ("figure.font_", "font"),
+        ("figure.axes_unicode_minus", "font"),
+        ("figure.svg_fonttype", "font"),
+        ("figure.pdf_fonttype", "font"),
+        ("figure.", "canvas"),
+    ),
+    "axes_x": (
+        ("axes_x.show", "label"),
+        ("axes_x.label_", "label"),
+        ("axes_x.tick_", "tick"),
+        ("axes_x.show_month_gridline", "grid"),
+        ("axes_x.grid_", "grid"),
+        ("axes_x.show_spine", "spine"),
+        ("axes_x.spine_", "spine"),
+        ("axes_x.limit_pad", "spine"),
+    ),
+    "table": (
+        ("table.xlsx.", "xlsx"),
+        ("table.precision.", "value"),
+        ("table.missing_placeholder", "value"),
+        ("table.unit_in_label", "value"),
+        ("table.show_title_row", "title"),
+        ("table.title_template", "title"),
+        ("table.show_period_note", "title"),
+        ("table.note_template", "title"),
+        ("table.show_source_note", "title"),
+        ("table.", "struct"),
+    ),
+    "compare": (
+        ("compare.colors", "color"),
+        ("compare.color_map", "color"),
+        ("compare.color_by", "color"),
+        ("compare.linestyle_cycle", "style"),
+        ("compare.marker_cycle", "style"),
+        ("compare.linewidth", "style"),
+        ("compare.markersize", "style"),
+        ("compare.alpha", "style"),
+        ("compare.bar_", "style"),
+        ("compare.grid", "layout"),
+        ("compare.facet_figsize", "layout"),
+        ("compare.share_ylim", "layout"),
+        ("compare.hspace", "layout"),
+        ("compare.wspace", "layout"),
+        ("compare.figsize", "layout"),
+        ("compare.sort_by", "legend"),
+        ("compare.sort_metric", "legend"),
+        ("compare.show_value_range", "legend"),
+        ("compare.label_template", "legend"),
+        ("compare.legend", "legend"),
+        ("compare.title_text", "title"),
+        ("compare.data_labels.", "labels"),
+        ("compare.", "basic"),
+    ),
+    "multi": (
+        ("multi.legend", "legend"),
+        ("multi.share_ylim", "legend"),
+        ("multi.", "layout"),
+    ),
+}
+
+#: 大类 → 二级分组定义 ``(键, 标题)``（顺序即界面顺序）
+SUBTREE_LABELS: dict[str, tuple[tuple[str, str], ...]] = {
+    "data": (
+        ("basic", "单位与取值口径"),
+        ("city", "城市名显示"),
+        ("coord", "经纬度显示"),
+    ),
+    "fetch": (
+        ("path", "站点与路径"),
+        ("retry", "超时 · 重试 · 限速"),
+        ("net", "网络与证书"),
+        ("cache", "本地缓存"),
+        ("raw", "原始响应与请求头"),
+    ),
+    "output": (
+        ("dir", "输出目录"),
+        ("name", "文件名模板"),
+        ("format", "格式与清晰度"),
+        ("misc", "覆盖策略与日志"),
+    ),
+    "figure": (
+        ("canvas", "画布"),
+        ("layout", "版式与边距"),
+        ("font", "字体与文字渲染"),
+        ("title", "标题"),
+        ("subtitle", "副标题"),
+        ("legend", "图例（单图 / 对比图 / 多图通用）"),
+        ("grid", "网格"),
+        ("bands", "背景色带"),
+        ("zeroline", "0 基准线"),
+        ("rainline", "平均降水线"),
+        ("annotation", "极值标注"),
+        ("credit", "数据来源署名"),
+    ),
+    "axes_primary": AXES_FAMILIES,
+    "axes_secondary": AXES_FAMILIES,
+    "axes_tertiary": AXES_FAMILIES,
+    "axes_x": (
+        ("label", "横轴标题"),
+        ("tick", "月份标签与刻度"),
+        ("grid", "月份竖线"),
+        ("spine", "轴脊与留白"),
+    ),
+    "table": (
+        ("struct", "表格结构"),
+        ("value", "数值与单位"),
+        ("title", "标题与脚注"),
+        ("xlsx", "Excel 样式"),
+    ),
+    "compare": (
+        ("basic", "元素与呈现"),
+        ("layout", "分面版式"),
+        ("color", "城市配色"),
+        ("style", "样式（按城市轮换）"),
+        ("legend", "排序与图例"),
+        ("title", "标题"),
+        ("labels", "数值标签"),
+    ),
+    "multi": (
+        ("layout", "排列与尺寸"),
+        ("legend", "图例与量程"),
+    ),
+}
+
+
+def _tag_subgroups(fields: tuple[Field, ...],
+                   rules: tuple[tuple[str, str], ...]) -> tuple[Field, ...]:
+    """按「对象」给字段打二级分组标记；已显式声明 ``subgroup`` 的字段保持原样。"""
+    tagged: list[Field] = []
+    for f in fields:
+        key = f.subgroup
+        if not key:
+            for pattern, sub in rules:
+                if f.path.startswith(pattern):
+                    key = sub
+                    break
+        tagged.append(Field(**{**f.__dict__, "subgroup": key}) if key != f.subgroup else f)
+    return tuple(tagged)
+
+
+def _merge_labels(base: tuple[tuple[str, str], ...],
+                  extra: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
+    """合并二级分组定义（按 key 去重，base 的顺序与标题优先）。"""
+    seen = {key for key, _label in base}
+    return tuple(base) + tuple(item for item in extra if item[0] not in seen)
+
+
+SUBTREE: dict[str, tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]] = {
+    key: (SUBTREE_RULES.get(key, ()), SUBTREE_LABELS.get(key, ()))
+    for key in set(SUBTREE_RULES) | set(SUBTREE_LABELS)
+}
+
+GROUPS = tuple(
+    Group(**{**g.__dict__, "subgroups": _merge_labels(SUBTREE[g.key][1], g.subgroups)})
+    if g.key in SUBTREE else g
+    for g in GROUPS
+)
+
 
 # ---- 索引与展开 ----------------------------------------------------------
 
+#: 单个元素内部的三级小节：基础 / 线与标记 / 柱状 / 平滑与面积 / 数值标签
+SERIES_FAMILIES: tuple[tuple[str, str], ...] = (
+    ("basic", "基础"),
+    ("line", "线与标记"),
+    ("bar", "柱状"),
+    ("area", "平滑与面积"),
+    ("labels", "数值标签"),
+)
+_SERIES_FAMILY_PATHS: dict[str, tuple[str, ...]] = {
+    "line": ("linewidth", "linestyle", "marker", "markersize", "markerfacecolor",
+             "markeredgecolor", "markeredgewidth", "markevery"),
+    "bar": ("bar_width", "bar_fill", "bar_hatch", "bar_edgecolor", "bar_linewidth", "bar_align"),
+    "area": ("smooth_points", "fill_alpha", "fill_between_key"),
+    "labels": ("data_labels.",),
+}
+
+
+def _series_family(path: str) -> str:
+    for key, patterns in _SERIES_FAMILY_PATHS.items():
+        if any(path == item or path.startswith(item) for item in patterns):
+            return key
+    return "basic"
+
+
 def series_fields(key: str) -> tuple[Field, ...]:
-    """把 ``SERIES_FIELDS`` 的相对路径展开为 ``series.<key>.<子项>``。"""
+    """把 ``SERIES_FIELDS`` 的相对路径展开为 ``series.<key>.<子项>``。
+
+    ``subgroup`` 用 ``"<元素>|<属性族>"`` 表示三级分组：表单里先按元素、再按属性族折叠。
+    """
+    labels = dict(SERIES_FAMILIES)
     return tuple(
-        Field(**{**f.__dict__, "path": f"series.{key}.{f.path}", "subgroup": key})
+        Field(**{**f.__dict__,
+                 "path": f"series.{key}.{f.path}",
+                 "subgroup": f"{key}|{_series_family(f.path)}",
+                 "subgroup_label": labels[_series_family(f.path)]})
         for f in SERIES_FIELDS
     )
+
+
+def _axes_family(path: str) -> str:
+    if path.startswith("label_"):
+        return "label"
+    if path.startswith("tick_") or path in ("limit", "limit_shift", "auto_pad_ratio", "scale"):
+        return "range"
+    if path.startswith("spine_") or path == "hide_top_spine":
+        return "spine"
+    return "basic"
 
 
 def axes_fields(prefix: str) -> tuple[Field, ...]:
@@ -935,7 +1197,8 @@ def axes_fields(prefix: str) -> tuple[Field, ...]:
     for f in AXES_FIELDS:
         if f.path == "offset_points" and prefix != "axes_tertiary":
             continue
-        result.append(Field(**{**f.__dict__, "path": f"{prefix}.{f.path}"}))
+        result.append(Field(**{**f.__dict__, "path": f"{prefix}.{f.path}",
+                               "subgroup": _axes_family(f.path)}))
     return tuple(result)
 
 

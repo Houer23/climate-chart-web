@@ -1665,14 +1665,15 @@ def _render_compare_single(cities: list[CityClimate], cfg: dict[str, Any],
     fig_cfg = cfg["figure"]
     title_cfg = dict(fig_cfg.get("title") or {})
     title_cfg["text"] = str(cmpc.get("title_text") or "{metric}对比 · {city}")
-    ax.set_title(
-        str(title_cfg["text"]).format(**context),
-        fontsize=float(title_cfg.get("fontsize", 16)),
-        color=str(title_cfg.get("color", "#2c3e50")),
-        fontweight=str(title_cfg.get("fontweight", "bold")),
-        pad=float(title_cfg.get("pad", 14)),
-        loc=str(title_cfg.get("loc", "center")),
-    )
+    if title_cfg.get("show", True):
+        ax.set_title(
+            str(title_cfg["text"]).format(**context),
+            fontsize=float(title_cfg.get("fontsize", 16)),
+            color=str(title_cfg.get("color", "#2c3e50")),
+            fontweight=str(title_cfg.get("fontweight", "bold")),
+            pad=float(title_cfg.get("pad", 14)),
+            loc=str(title_cfg.get("loc", "center")),
+        )
     sub_cfg = fig_cfg.get("subtitle") or {}
     if sub_cfg.get("show"):
         text = str(sub_cfg.get("text", "")).format(**context)
@@ -2129,23 +2130,26 @@ def _render_compare_overlay(cities: list[CityClimate], cfg: dict[str, Any],
             sub_text = str(sub_cfg.get("text", "")).format(**context)
         except (KeyError, IndexError, ValueError):
             sub_text = str(sub_cfg.get("text", ""))
+    show_title = bool(title_cfg.get("show", True))
     if title_in_figure:
-        fig.suptitle(title, fontsize=float(title_cfg.get("fontsize", 16)),
-                     color=str(title_cfg.get("color", "#2c3e50")),
-                     fontweight=str(title_cfg.get("fontweight", "bold")), y=0.985)
+        if show_title:
+            fig.suptitle(title, fontsize=float(title_cfg.get("fontsize", 16)),
+                         color=str(title_cfg.get("color", "#2c3e50")),
+                         fontweight=str(title_cfg.get("fontweight", "bold")), y=0.985)
         if sub_text.strip():
             fig.text(0.5, 0.935, sub_text, ha="center", va="top",
                      fontsize=float(sub_cfg.get("fontsize", 10.5)),
                      color=str(sub_cfg.get("color", "#596679")))
     else:
-        ax.set_title(
-            title,
-            fontsize=float(title_cfg.get("fontsize", 16)),
-            color=str(title_cfg.get("color", "#2c3e50")),
-            fontweight=str(title_cfg.get("fontweight", "bold")),
-            pad=float(title_cfg.get("pad", 14)),
-            loc=str(title_cfg.get("loc", "center")),
-        )
+        if show_title:
+            ax.set_title(
+                title,
+                fontsize=float(title_cfg.get("fontsize", 16)),
+                color=str(title_cfg.get("color", "#2c3e50")),
+                fontweight=str(title_cfg.get("fontweight", "bold")),
+                pad=float(title_cfg.get("pad", 14)),
+                loc=str(title_cfg.get("loc", "center")),
+            )
         if sub_text.strip():
             ax.text(0.5, 1.0, sub_text, transform=ax.transAxes, ha="center", va="bottom",
                     fontsize=float(sub_cfg.get("fontsize", 10.5)),
@@ -2299,13 +2303,14 @@ def _render_compare_facet(cities: list[CityClimate], cfg: dict[str, Any],
                 logger.warning(f"对比元素 {metric} 跳过：{exc}")
             continue
         drawn += 1
-        ax.set_title(
-            METRIC_LABELS.get(metric, metric),
-            fontsize=float(title_cfg.get("fontsize", 16)) * 0.8,
-            color=str(title_cfg.get("color", "#2c3e50")),
-            fontweight=str(title_cfg.get("fontweight", "bold")),
-            pad=float(title_cfg.get("pad", 14)) * 0.6,
-        )
+        if title_cfg.get("show", True):
+            ax.set_title(
+                METRIC_LABELS.get(metric, metric),
+                fontsize=float(title_cfg.get("fontsize", 16)) * 0.8,
+                color=str(title_cfg.get("color", "#2c3e50")),
+                fontweight=str(title_cfg.get("fontweight", "bold")),
+                pad=float(title_cfg.get("pad", 14)) * 0.6,
+            )
         if first_ax is None:
             first_ax, first_handles = ax, handles
     for index in range(len(metrics), cols * rows):
@@ -2321,9 +2326,10 @@ def _render_compare_facet(cities: list[CityClimate], cfg: dict[str, Any],
         fig_title = title_text.format(**context)
     except (KeyError, IndexError, ValueError):
         fig_title = title_text
-    fig.suptitle(fig_title, fontsize=float(title_cfg.get("fontsize", 16)),
-                 color=str(title_cfg.get("color", "#2c3e50")),
-                 fontweight=str(title_cfg.get("fontweight", "bold")), y=0.985)
+    if title_cfg.get("show", True):
+        fig.suptitle(fig_title, fontsize=float(title_cfg.get("fontsize", 16)),
+                     color=str(title_cfg.get("color", "#2c3e50")),
+                     fontweight=str(title_cfg.get("fontweight", "bold")), y=0.985)
     sub_cfg = fig_cfg.get("subtitle") or {}
     has_subtitle = False
     if sub_cfg.get("show"):

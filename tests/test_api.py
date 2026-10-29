@@ -143,10 +143,31 @@ check(any(item["value"] == "legend" for item in groups["figure"].get("subgroups"
       "画布分组应把图例参数单独成组")
 check(len(legend_fields) >= 14 and all(f["subgroup"] == "legend" for f in legend_fields),
       f"figure.legend.* 应全部归入「图例」子组，实际 {len(legend_fields)} 项")
-check(len(groups["compare"].get("subgroups") or []) == 5,
-      f"compare 分组应给出 5 个元素样式子分组，实际 {groups['compare'].get('subgroups')}")
+compare_sub_keys = [item["value"] for item in groups["compare"].get("subgroups") or []]
+check(all(key in compare_sub_keys
+          for key in ("minTemp", "maxTemp", "meanTemp", "rainfall", "raindays")),
+      f"compare 分组应保留 5 个元素样式子分组，实际 {compare_sub_keys}")
+check({"basic", "layout", "color", "style", "legend"} <= set(compare_sub_keys),
+      f"compare 分组应按对象给出小节，实际 {compare_sub_keys}")
 check(any(f["subgroup"] for f in groups["compare"]["fields"]),
       "元素样式字段应带 subgroup，前端才能渲染成 5 个小组")
+
+# 二级/三级分层：除 meta 外每个大类都要有子分组；series 用「元素|属性族」表示三级
+empties = [group_key for group_key, group in groups.items()
+           if group_key not in ("meta", "series") and not (group.get("subgroups") or [])]
+check(not empties, f"除 meta / series 外每个大类都应有子分组，实际缺：{empties}")
+check(bool(groups["series"].get("seriesKeys")),
+      "series 分组应以元素（seriesKeys）作为一级分组")
+check(len(groups["figure"].get("subgroups") or []) >= 10,
+      f"画布分组应按对象拆成 ≥10 个小节，实际 {len(groups['figure'].get('subgroups') or [])}")
+series_fields_all = groups["series"]["fields"]
+check(all("|" in f["subgroup"] for f in series_fields_all),
+      "series 字段的 subgroup 应是「元素|属性族」形式（三级分组）")
+check(all(f["subgroupLabel"] for f in series_fields_all),
+      "series 字段应带 subgroupLabel，供三级小节标题使用")
+series_families = {f["subgroup"].split("|")[1] for f in series_fields_all}
+check({"basic", "line", "bar", "labels"} <= series_families,
+      f"series 属性族应至少含 基础/线/柱/标签，实际 {sorted(series_families)}")
 
 status, payload = api("GET", "/api/profiles")
 check(status == 200 and any(p["name"] == "default" for p in payload["profiles"]),
