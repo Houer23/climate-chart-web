@@ -162,6 +162,17 @@ check(accepts("compare.bar_fill_color", "#eef2f7"), "对比柱纹理底色应接
 check(accepts("compare.bar_fill_color_cycle", ["#dbe6f0", "#f7eef2"]),
       "按城市纹理底色应接受颜色数组")
 check(accepts("compare.bar_fill_color_cycle", []), "按城市纹理底色应允许空数组（不覆盖）")
+check(accepts("compare.markerfacecolor", "auto") and accepts("compare.markerfacecolor", "#ffffff"),
+      "标记填充应接受 auto 与颜色")
+check(accepts("compare.markerfacecolor", "none"), "标记填充应接受 none（透明，只留轮廓）")
+check(accepts("compare.markeredgecolor", "auto") and rejects("compare.markeredgecolor", "thick"),
+      "标记轮廓色只接受 auto / none / 颜色字面量")
+check(accepts("compare.markeredgewidth", 0) and accepts("compare.markeredgewidth", 1.5)
+      and rejects("compare.markeredgewidth", "thick"),
+      "标记轮廓宽应接受数字、拒绝文本")
+check(accepts("compare.markerfacecolor_cycle", ["auto", "#ffffff"]),
+      "按城市标记填充应接受数组（auto 表示跟随城市色）")
+check(accepts("compare.markeredgecolor_cycle", []), "按城市标记轮廓应允许空数组")
 check(accepts("compare.bar_fill", "hatch") and rejects("compare.bar_fill", "none"),
       "对比柱填充方式应接受 solid / hollow / hatch")
 check(accepts("compare.bar_linewidth", 0.8), "对比柱边线宽应接受浮点")

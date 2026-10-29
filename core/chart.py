@@ -756,6 +756,26 @@ def _draw_grid(grid_owner, axis_map: dict[str, Any], bottom_key: str,
         bottom.grid(True, axis="x", which=which, **style)
 
 
+def _marker_style(cmpc: dict[str, Any], color: str, index: int = 0) -> dict[str, Any]:
+    """多城市对比里标记的填充 / 轮廓 → ``ax.plot`` 的 marker 颜色参数。
+
+    取值优先级：``markerfacecolor_cycle`` / ``markeredgecolor_cycle``（按 ``index``
+    即城市序号轮换）> ``markerfacecolor`` / ``markeredgecolor``（全局单值）。
+    ``auto`` = 跟随该序列的颜色（与旧版一致），``none`` = 透明。
+    """
+    def pick(key: str) -> str:
+        cycle = [item for item in (cmpc.get(f"{key}_cycle") or []) if str(item).strip()]
+        if cycle:
+            return str(cycle[int(index) % len(cycle)]).strip()
+        return str(cmpc.get(key, "auto") or "auto").strip()
+
+    return {
+        "markerfacecolor": _pick(pick("markerfacecolor"), color),
+        "markeredgecolor": _pick(pick("markeredgecolor"), color),
+        "markeredgewidth": float(cmpc.get("markeredgewidth", 1.0) or 0.0),
+    }
+
+
 # ---- 单个元素绘制 ------------------------------------------------------
 
 def _bar_style(scfg: dict[str, Any], color: str, index: int = 0) -> dict[str, Any]:
@@ -829,6 +849,12 @@ def _plot_one(ax, key: str, scfg: dict[str, Any], x: np.ndarray, y: np.ndarray,
     mew = float(scfg.get("markeredgewidth", 1.0))
     every = max(1, int(scfg.get("markevery", 1) or 1))
     label = str(scfg.get("_label", key))
+    # 标记样式（填充 / 轮廓 / 间隔）：line / step / area / fill_between 共用；
+    # 没配标记时不传任何 marker 参数，保持与旧版完全一致
+    marker_kwargs = dict(
+        marker=marker, markersize=ms, markerfacecolor=mfc, markeredgecolor=mec,
+        markeredgewidth=mew, markevery=every,
+    ) if marker else {}
 
     if chart_type == "bar":
         width = float(scfg.get("bar_width", 0.55))
@@ -845,6 +871,12 @@ def _plot_one(ax, key: str, scfg: dict[str, Any], x: np.ndarray, y: np.ndarray,
         line, = ax.plot(xs, ys, color=color, alpha=alpha, linewidth=lw, linestyle=ls,
                         zorder=zorder, label=label)
         if marker:
+            # 让图例句柄也带上标记（线上不额外画点：点位由下面的独立 artist 负责）
+            line.set_marker(marker)
+            line.set_markerfacecolor(mfc)
+            line.set_markeredgecolor(mec)
+            line.set_markeredgewidth(mew)
+            line.set_markevery([])
             ax.plot(x, y, linestyle="none", marker=marker, markersize=ms,
                     markerfacecolor=mfc, markeredgecolor=mec, markeredgewidth=mew,
                     markevery=every, zorder=zorder + 0.1)
@@ -852,20 +884,22 @@ def _plot_one(ax, key: str, scfg: dict[str, Any], x: np.ndarray, y: np.ndarray,
 
     if chart_type == "area":
         line, = ax.plot(x, y, color=color, alpha=alpha, linewidth=lw, linestyle=ls,
-                        zorder=zorder, label=label)
+                        zorder=zorder, label=label, **marker_kwargs)
         ax.fill_between(x, 0, np.nan_to_num(y, nan=0.0), color=color,
                         alpha=float(scfg.get("fill_alpha", 0.18)), zorder=zorder - 0.1)
         return line
 
     if chart_type == "step":
         line, = ax.step(x, y, where="mid", color=color, alpha=alpha,
-                        linewidth=lw, linestyle=ls, zorder=zorder, label=label)
+                        linewidth=lw, linestyle=ls, zorder=zorder, label=label,
+                        **marker_kwargs)
         return line
 
     if chart_type == "scatter":
+        # 散点：填充 / 轮廓 / 轮廓宽各自独立（auto = 跟随配色）
         return ax.scatter(x, y, s=float(scfg.get("markersize", 30)) ** 2 / 6,
-                          color=color, alpha=alpha, marker=_pick(scfg.get("marker"), "o"),
-                          zorder=zorder, label=label, edgecolors=mec)
+                          facecolors=mfc, alpha=alpha, marker=_pick(scfg.get("marker"), "o"),
+                          zorder=zorder, label=label, edgecolors=mec, linewidths=mew)
 
     if chart_type == "fill_between":
         base_key = normalize_series_key(str(scfg.get("fill_between_key", "minTemp")))
@@ -873,15 +907,13 @@ def _plot_one(ax, key: str, scfg: dict[str, Any], x: np.ndarray, y: np.ndarray,
         if base is None:
             base = np.zeros_like(y)
         line, = ax.plot(x, y, color=color, alpha=alpha, linewidth=lw, linestyle=ls,
-                        zorder=zorder, label=label)
+                        zorder=zorder, label=label, **marker_kwargs)
         ax.fill_between(x, base, np.nan_to_num(y, nan=np.nan), color=color,
                         alpha=float(scfg.get("fill_alpha", 0.18)), zorder=zorder - 0.1)
         return line
 
     return ax.plot(x, y, color=color, alpha=alpha, linewidth=lw, linestyle=ls,
-                   marker=marker, markersize=ms, markerfacecolor=mfc,
-                   markeredgecolor=mec, markeredgewidth=mew, markevery=every,
-                   zorder=zorder, label=label)[0]
+                   zorder=zorder, label=label, **marker_kwargs)[0]
 
 
 def _draw_data_labels(ax, scfg: dict[str, Any], x: np.ndarray, y: np.ndarray,
@@ -1594,6 +1626,7 @@ def _render_compare_single(cities: list[CityClimate], cfg: dict[str, Any],
         style = _compare_metric_style(cmpc, metric, 0, i)
         ls = style["linestyle"]
         marker = style["marker"]
+        marker_style = _marker_style(cmpc, color, i)
         label = str(cmpc.get("label_template", "{city}")).format(city=city_display_name(city, cfg))
         if cmpc.get("show_value_range", False):
             valid = values[np.isfinite(values)]
@@ -1613,12 +1646,18 @@ def _render_compare_single(cities: list[CityClimate], cfg: dict[str, Any],
                               linewidth=float(cmpc.get("linewidth", 2.2)), linestyle=ls,
                               label=label, zorder=3)
             ax.plot(x, values, linestyle="none", marker=marker,
-                    markersize=float(cmpc.get("markersize", 5.0)), color=color, zorder=3.1)
+                    markersize=float(cmpc.get("markersize", 5.0)), zorder=3.1, **marker_style)
+            # 图例带上标记（线上不额外画点）
+            handle.set_marker(marker)
+            handle.set_markerfacecolor(marker_style["markerfacecolor"])
+            handle.set_markeredgecolor(marker_style["markeredgecolor"])
+            handle.set_markeredgewidth(marker_style["markeredgewidth"])
+            handle.set_markevery([])
         else:
             handle, = ax.plot(x, values, color=color, alpha=float(cmpc.get("alpha", 1.0)),
                               linewidth=float(cmpc.get("linewidth", 2.2)), linestyle=ls,
                               marker=marker, markersize=float(cmpc.get("markersize", 5.0)),
-                              label=label, zorder=3)
+                              label=label, zorder=3, **marker_style)
         handles.append(handle)
 
         dl = cmpc.get("data_labels") or {}
@@ -1792,22 +1831,31 @@ def _plot_compare_series(ax, x: np.ndarray, values: np.ndarray, *, chart_type: s
                          color: str, linestyle: str, marker: str, alpha: float,
                          linewidth: float, markersize: float, bar_width: float,
                          offset: float, label: str,
-                         bar_style: Optional[dict[str, Any]] = None) -> Any:
+                         bar_style: Optional[dict[str, Any]] = None,
+                         marker_style: Optional[dict[str, Any]] = None) -> Any:
     """按图形类型画一条「城市 × 元素」序列，返回图例句柄。"""
     if chart_type in BAR_CHART_TYPES:
         return ax.bar(x + offset, np.nan_to_num(values, nan=0.0), width=bar_width,
                       alpha=alpha, label=label, zorder=3,
                       **dict(bar_style or {"facecolor": color}))
+    mstyle = dict(marker_style or {})
     if chart_type in ("smooth", "spline"):
         xs, ys = _hermite_smooth(x, values, 240)
         handle, = ax.plot(xs, ys, color=color, alpha=alpha, linewidth=linewidth,
                           linestyle=linestyle, label=label, zorder=3)
         ax.plot(x, values, linestyle="none", marker=marker,
-                markersize=markersize, color=color, zorder=3.1)
+                markersize=markersize, zorder=3.1, **mstyle)
+        # 图例带上标记（线上不额外画点）
+        handle.set_marker(marker)
+        if mstyle:
+            handle.set_markerfacecolor(mstyle.get("markerfacecolor", color))
+            handle.set_markeredgecolor(mstyle.get("markeredgecolor", color))
+            handle.set_markeredgewidth(mstyle.get("markeredgewidth", 1.0))
+        handle.set_markevery([])
         return handle
     handle, = ax.plot(x, values, color=color, alpha=alpha, linewidth=linewidth,
                       linestyle=linestyle, marker=marker, markersize=markersize,
-                      label=label, zorder=3)
+                      label=label, zorder=3, **mstyle)
     return handle
 
 
@@ -2054,6 +2102,7 @@ def _render_compare_overlay(cities: list[CityClimate], cfg: dict[str, Any],
                 "style": _compare_metric_style(cmpc, metric, metric_index, city_index),
                 # 柱样式按 style_dimension 取序号：city/hybrid 按城市，metric 按元素
                 "bar_index": city_index if bar_by_city else metric_index,
+                "city_index": city_index,
             })
 
     # 柱宽按**全图**柱状序列数均分：主副轴都画柱时也并排而不是互相压住
@@ -2090,7 +2139,8 @@ def _render_compare_overlay(cities: list[CityClimate], cfg: dict[str, Any],
             color=item["color"], linestyle=item["style"]["linestyle"],
             marker=item["style"]["marker"], alpha=alpha, linewidth=linewidth,
             markersize=markersize, bar_width=width, offset=offset, label=label,
-            bar_style=_bar_style(cmpc, item["color"], item["bar_index"]))
+            bar_style=_bar_style(cmpc, item["color"], item["bar_index"]),
+            marker_style=_marker_style(cmpc, item["color"], item["city_index"]))
         _draw_data_labels(target, label_cfg, x, item["values"], item["color"])
 
     axis_defaults = {"primary": (-0.075, "axes_primary"),
@@ -2221,7 +2271,8 @@ def _draw_compare_metric_panel(ax, cities: list[CityClimate], cfg: dict[str, Any
             linestyle=style["linestyle"], marker=style["marker"],
             alpha=alpha, linewidth=linewidth, markersize=markersize,
             bar_width=width, offset=offset, label=label,
-            bar_style=_bar_style(cmpc, colors[index], index if bar_by_city else 0)))
+            bar_style=_bar_style(cmpc, colors[index], index if bar_by_city else 0),
+            marker_style=_marker_style(cmpc, colors[index], index)))
         _draw_data_labels(ax, label_cfg, x, values, colors[index])
 
     axis_key = _metric_axis_key(metric)

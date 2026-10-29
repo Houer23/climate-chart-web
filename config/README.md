@@ -362,6 +362,9 @@ profiles:
 | `linestyle_cycle` / `marker_cycle` | array | 4 种 / 8 种 | 线型与标记循环，**按城市**轮换（颜色统一时靠样式区分城市） |
 | `style_dimension` | str | `"city"` | 线型/标记按谁轮换：`city` 按城市 / `metric` 按元素（旧行为，元素样式里的线型·标记生效）/ `hybrid` 线型按城市、标记按元素；柱的填充与纹理跟随同一维度 |
 | `linewidth` / `markersize` / `alpha` | — | `2.2` / `5.0` / `1.0` | 线条样式 |
+| `markerfacecolor` / `markeredgecolor` | color | `"auto"` | 标记的填充与轮廓：`auto` = 跟随该序列的城市色，`none` = 透明（只留轮廓） |
+| `markeredgewidth` | float | `1.0` | 标记轮廓线宽，`0` = 无轮廓 |
+| `markerfacecolor_cycle` / `markeredgecolor_cycle` | array | `[]` | **按城市**轮换的标记填充 / 轮廓（非空时覆盖上面的全局值，`auto` 项表示仍用城市色） |
 | `bar_width` | float | `0.8` | 柱状模式总柱宽（内部按城市/元素数均分） |
 | `bar_fill` | str | `"solid"` | 柱填充方式（全局兜底）：`solid` 实心 / `hollow` 空心 / `hatch` 纹理填充 |
 | `bar_hatch` | str | `""` | 纹理样式（全局兜底，同 `series.bar_hatch`）；空 = `/` |

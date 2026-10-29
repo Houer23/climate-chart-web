@@ -488,7 +488,11 @@ for path in multi.get("files") or []:
 
 status, payload = api("POST", "/api/render", {
     "mode": "compare", "cities": ["237", "1"], "profile": "compare",
-    "values": {**FAST, "output.compare_name_template": "_apitest_compare"},
+    "values": {**FAST,
+               "compare.markerfacecolor": "#ffffff",
+               "compare.markeredgecolor": "#000000",
+               "compare.markeredgewidth": 1.5,
+               "output.compare_name_template": "_apitest_compare"},
     "save_files": True,
 })
 compare_id = (payload.get("task") or {}).get("id")

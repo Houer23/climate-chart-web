@@ -522,6 +522,11 @@ DEFAULTS: dict[str, Any] = {
         "marker_cycle": ["o", "s", "^", "D", "v", "P", "X", "*"],
         "linewidth": 2.2,
         "markersize": 5.0,
+        "markerfacecolor": "auto",          # 标记填充：auto = 跟随城市色，none = 透明
+        "markeredgecolor": "auto",          # 标记轮廓：auto = 跟随城市色
+        "markeredgewidth": 1.0,             # 标记轮廓线宽（0 = 无轮廓）
+        "markerfacecolor_cycle": [],        # 按城市轮换的标记填充（非空时覆盖）
+        "markeredgecolor_cycle": [],        # 按城市轮换的标记轮廓（非空时覆盖）
         "alpha": 1.0,
         "bar_width": 0.8,
         "bar_fill": "solid",                # 柱状对比时的填充方式：solid | hollow | hatch
