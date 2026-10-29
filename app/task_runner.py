@@ -19,7 +19,7 @@ from __future__ import annotations
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass, field as dc_field, replace
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence
 
@@ -509,11 +509,25 @@ def _write_tables(task: Task, cfg: dict[str, Any], city: CityClimate, out_dir: P
     return {"tables": artifacts, "files": files}
 
 
+def _unify_city_name(city: CityClimate, cfg: dict[str, Any]) -> CityClimate:
+    """把「展示名」固化进 ``city.city_name``，让标题 / 图例 / 文件名用同一种城市名。
+
+    core 里取名字的方式并不统一：单图标题、对比图图例、单图表名走
+    ``city_display_name()``（受 ``data.city_short_name`` 控制），而多图整幅标题、
+    对比图 / 多图文件名直接拼 ``city.city_name``。在应用层统一改名后，core 的每条
+    路径拿到的都是同一个名字——既不用改 core，也不会两处各改一遍。
+    """
+    if not (cfg.get("data") or {}).get("city_short_name"):
+        return city
+    short = city_display_name(city, cfg)
+    return city if short == city.city_name else replace(city, city_name=short)
+
+
 def _fetch(task: Task, client: HttpClient, cfg: dict[str, Any], city_id: int, logger
            ) -> tuple[Optional[CityClimate], Optional[str]]:
     try:
         city = fetch_city(client, cfg, city_id, logger)
-        return city, None
+        return _unify_city_name(city, cfg), None
     except (CityNotFoundError, NoClimateDataError, ParseError, FetchError) as exc:
         return None, str(exc)
 

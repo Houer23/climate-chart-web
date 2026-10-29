@@ -834,6 +834,13 @@ MULTI_FIELDS: tuple[Field, ...] = (
     _f("multi.hspace", "num_or_null", "行间距", "null = 交给布局引擎决定。"),
 )
 
+#: ``figure.legend.*`` 的 14 个参数在表单里单独成组（单图 / 对比图 / 多图通用）
+FIGURE_FIELDS = tuple(
+    Field(**{**f.__dict__, "subgroup": "legend"})
+    if f.path.startswith("figure.legend.") else f
+    for f in FIGURE_FIELDS
+)
+
 # =========================================================================
 # 分组
 # =========================================================================
@@ -856,8 +863,9 @@ GROUPS: tuple[Group, ...] = (
           "输出目录、文件名模板、表格与图片格式、覆盖策略。",
           OUTPUT_FIELDS),
     Group("figure", "D. 画布与版式",
-          "画布尺寸、字体、标题、副标题、图例、网格、背景色带、标注与署名。",
-          FIGURE_FIELDS),
+          "画布尺寸、字体、标题、副标题、图例、网格、背景色带、标注与署名。"
+          "图例参数集中在本组的「图例」小节，单图 / 对比图 / 多图通用。",
+          FIGURE_FIELDS, subgroups=(("legend", "图例（单图 / 对比图 / 多图通用）"),)),
     Group("axes_primary", "E1. 主轴（温度）",
           "左轴：量程、刻度、轴标题与轴脊。", AXES_FIELDS, axes=True),
     Group("axes_secondary", "E2. 副轴（降水）",
@@ -872,7 +880,9 @@ GROUPS: tuple[Group, ...] = (
     Group("table", "H. 表格",
           "行项目与顺序、行名、转置、精度、脚注与 XLSX 样式。", TABLE_FIELDS),
     Group("compare", "I. 多城市对比图",
-          "单元素 / 多元素对比：分面或同图叠加、配色排序、图例与数值标签。",
+          "单元素 / 多元素对比：分面或同图叠加、配色排序、图例与数值标签。"
+          "图例的样式（字号、边框、底色、标题）在 D 组「图例」里；本组只放多元素专属的"
+          "排列方式与位置。",
           COMPARE_FIELDS, subgroups=ELEMENT_STYLE_SUBGROUPS),
     Group("multi", "J. 多图（多城市同画布）",
           "排列方式、图例方式、纵轴量程策略与间距。", MULTI_FIELDS),

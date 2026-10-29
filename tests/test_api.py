@@ -138,6 +138,11 @@ check(color_map_field["extra"] is True, "color_map 应标记为扩展键")
 
 check(compare_fields["compare.metrics"]["maxItems"] == 4,
       "compare.metrics 应向前端暴露 maxItems=4")
+legend_fields = [f for f in groups["figure"]["fields"] if f["path"].startswith("figure.legend.")]
+check(any(item["value"] == "legend" for item in groups["figure"].get("subgroups") or []),
+      "画布分组应把图例参数单独成组")
+check(len(legend_fields) >= 14 and all(f["subgroup"] == "legend" for f in legend_fields),
+      f"figure.legend.* 应全部归入「图例」子组，实际 {len(legend_fields)} 项")
 check(len(groups["compare"].get("subgroups") or []) == 5,
       f"compare 分组应给出 5 个元素样式子分组，实际 {groups['compare'].get('subgroups')}")
 check(any(f["subgroup"] for f in groups["compare"]["fields"]),
@@ -412,6 +417,33 @@ check(snapshot.get("status") == "done", f"对比任务应完成，实际 {snapsh
 compare = (snapshot.get("result") or {}).get("compare") or {}
 check(compare.get("series"), f"对比图应报告对比要素，实际 {compare}")
 for path in compare.get("files") or []:
+    try:
+        Path(path).unlink()
+    except OSError:
+        pass
+
+# 城市名类型统一：短名开启时，结果清单与文件名都不应再出现完整名（含「，」）
+status, payload = api("POST", "/api/render", {
+    "mode": "multi", "cities": ["637", "634"], "grid": "1x2", "profile": "default",
+    "values": {**FAST, "data.city_short_name": True,
+               "output.multi_name_template": "{cities}"},
+    "save_files": True,
+})
+name_id = (payload.get("task") or {}).get("id")
+snapshot = {}
+deadline = time.time() + 240
+while time.time() < deadline:
+    status, snapshot = api("GET", f"/api/render/{name_id}?cursor=0&wait=10")
+    if snapshot.get("status") in ("done", "error", "cancelled"):
+        break
+check(snapshot.get("status") == "done", f"短名多图任务应完成，实际 {snapshot.get('status')}")
+named = (snapshot.get("result") or {}).get("multi") or {}
+drawn_names = [item["name"] for item in named.get("drawn") or []]
+check(len(drawn_names) == 2 and all("，" not in name for name in drawn_names),
+      f"短名开启时结果清单应用短名，实际 {drawn_names}")
+check(all("，" not in Path(path).stem for path in named.get("files") or []),
+      f"短名开启时文件名不应用完整名，实际 {named.get('files')}")
+for path in named.get("files") or []:
     try:
         Path(path).unlink()
     except OSError:
