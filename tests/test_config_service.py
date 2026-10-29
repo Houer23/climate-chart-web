@@ -195,12 +195,12 @@ check(full_cfg["data"]["temp_unit"] == "F", "全量保存后温度单位应生�
 check(full_cfg["series"]["meanTemp"]["enabled"] is True, "全量保存后元素开关应生效")
 check(full_cfg["profile_description"] == "回归测试：全量", "全量保存后说明应生效")
 check(full_cfg["output"]["table_formats"] == ["csv", "md", "xlsx"],
-      "全量保存应把未改项也写入（完整配置）")
+      "全量保存应写入被改过的项")
 
 full_file = cs.profile_file(FULL_NAME)
 full_raw = yaml.safe_load(full_file.read_text(encoding="utf-8"))
 check("extends" not in full_raw, "全量保存的文件不应含 extends")
-check("figure" in full_raw and "series" in full_raw, "全量保存的文件应含完整分组")
+check("figure" in full_raw and "series" in full_raw, "全量保存的文件应含改动所在的分组")
 check(saved["mode"] == "full", f"返回的 mode 应为 full，实际 {saved['mode']}")
 
 # ---- 4. 另存：继承差量 ---------------------------------------------------
@@ -242,11 +242,13 @@ check("axes_x" not in diff_raw,
 check("compare" not in diff_raw,
       f"空的 color_map 不应写进差量，实际 compare={diff_raw.get('compare')!r}")
 
-# 差量文件应显著小于全量文件
-full_size = full_file.stat().st_size
-diff_size = diff_file.stat().st_size
-check(diff_size * 5 < full_size,
-      f"差量文件应远小于全量文件（差量 {diff_size} vs 全量 {full_size}）")
+# 全量另存只保留「与默认值不同」的项：一项都不改的探针应当只剩说明
+probe_full = cs.build_save_payload("__probe__", "full", {}, base="default")
+check({k for k in probe_full if k != "description"} == set(),
+      f"全量另存应剔除等于默认值的项，实际仍剩 "
+      f"{sorted(k for k in probe_full if k != 'description')}")
+check(full_file.stat().st_size > 0 and diff_file.stat().st_size > 0,
+      "全量与差量文件都不应为空文件")
 
 # 等价性：差异项之外，两者应完全一致
 def flatten(node, prefix=""):
@@ -305,10 +307,17 @@ check("label_text" not in full_payload.get("axes_x", {}),
       "全量配置应剔除空的扩展键 axes_x.label_text")
 check("color_map" not in full_payload.get("compare", {}),
       "全量配置应剔除空的扩展键 compare.color_map")
-check("show" in full_payload.get("axes_x", {}) and "colors" in full_payload.get("compare", {}),
-      "剔除空扩展键不应误删同组的其他配置项")
-check(full_payload.get("figure", {}).get("title", {}).get("text"),
-      "全量配置仍应保留有意义的取值（如标题文本）")
+check({k for k in full_payload if k != "description"} == set(),
+      f"一项都不改时，全量另存应只剩说明（默认值全部剔除），实际 {sorted(full_payload)}")
+
+tuned = cs.build_save_payload("__probe__", "full",
+                              {"axes_x.label_fontsize": 15, "figure.title.text": "{city} 自定义"},
+                              base="default")
+check(tuned.get("axes_x") == {"label_fontsize": 15.0},
+      f"只改一项时，该组应只剩这一项（等于默认值的兄弟项被剔除），"
+      f"实际 {tuned.get('axes_x')!r}")
+check(tuned.get("figure", {}).get("title") == {"text": "{city} 自定义"},
+      f"全量配置应保留非默认的取值，实际 {tuned.get('figure', {}).get('title')!r}")
 
 # 存一份带说明的差量后再加载：说明文案应更新，且不含 profile_description
 cs.save_profile({"name": DIFF_NAME, "mode": "keep", "base": DIFF_NAME,

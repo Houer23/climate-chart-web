@@ -75,6 +75,12 @@ function validateField(field, value) {
       if (value.length !== 2) return "需要两个数字";
       return value.every(isNumber) ? null : "需要两个数字";
     }
+    case "enum_or_null": {
+      // null / 空串 = 不指定，交给后端回落默认
+      if (value === null || value === undefined || String(value).trim() === "") return null;
+      return field.enum.some((item) => String(item.value) === String(value))
+        ? null : `只能是 ${field.enum.map((i) => i.value).join("、")} 之一，或留空`;
+    }
     case "enum": {
       if (field.coerce === "int") {
         const number = Number(value);
@@ -126,6 +132,9 @@ function validateField(field, value) {
       const allowed = field.options.map((item) => String(item.value));
       const bad = value.filter((item) => !allowed.includes(String(item)));
       if (bad.length) return `含不支持的取值 ${bad.join("、")}`;
+      if (field.maxItems && value.length > field.maxItems) {
+        return `最多选择 ${field.maxItems} 项（当前 ${value.length} 项）`;
+      }
       return value.length === 0 && !field.allowEmpty ? "至少要选择一项" : null;
     }
     case "list_str":
@@ -310,24 +319,34 @@ class ConfigForm {
     this.groups.forEach((group) => {
       const container = this.groupNodes.get(group.key);
       if (!container) return;
+      // blocks = 主区 + 各二级小节 + 各三级小节，逐块过滤（避免主区字段被漏掉）
+      const blocks = container.blocks || [{ details: null, rows: container.rows }];
+      const visibleRows = new Map();
       let visibleTotal = 0;
-      const targets = container.subgroups.length ? container.subgroups : [container];
-      targets.forEach((target) => {
-        let visible = 0;
-        target.rows.forEach((row) => {
+      blocks.forEach((block) => {
+        let shown = 0;
+        block.rows.forEach((row) => {
           const field = row.field;
           const haystack = `${field.label} ${field.path} ${field.desc}`.toLowerCase();
           const matchKeyword = !this.keyword || haystack.includes(this.keyword);
           const matchChanged = !this.onlyChanged || this.isChanged(field.path);
           const show = matchKeyword && matchChanged;
           row.node.classList.toggle("hidden", !show);
-          if (show) visible += 1;
+          visibleRows.set(row, show);
+          if (show) shown += 1;
         });
-        if (target.details) {
-          target.details.classList.toggle("hidden", visible === 0);
-          if (this.keyword && visible > 0) target.details.open = true;
+        if (block.details) {
+          block.details.classList.toggle("hidden", shown === 0);
+          if (this.keyword && shown > 0) block.details.open = true;
         }
-        visibleTotal += visible;
+        visibleTotal += shown;
+      });
+      // 二级小节自身：直属行 + 其下三级小节，全部不可见时才隐藏
+      (container.subgroups || []).forEach((sub) => {
+        const countOf = (rows) => rows.reduce((n, row) => n + (visibleRows.get(row) ? 1 : 0), 0);
+        let shown = countOf(sub.rows);
+        sub.families.forEach((fam) => { shown += countOf(fam.rows); });
+        sub.details.classList.toggle("hidden", shown === 0);
       });
       container.details.classList.toggle("hidden", visibleTotal === 0);
       if (this.keyword && visibleTotal > 0) container.details.open = true;
@@ -355,7 +374,8 @@ class ConfigForm {
       const details = h("details", { class: "group", open: group.key === "data" }, [
         h("summary", {}, [
           h("span", { text: group.title }),
-          h("span", { class: "group-desc", text: group.desc || "" }),
+          // 说明在标题栏里单行省略，完整文案放 title，悬停可看
+          h("span", { class: "group-desc", text: group.desc || "", title: group.desc || "" }),
           counter,
         ]),
         body,
@@ -363,32 +383,70 @@ class ConfigForm {
       this.root.appendChild(details);
 
       const container = {
-        details, rows: [], subgroups: [], countNode: counter,
+        details, rows: [], subgroups: [], mainRows: [], countNode: counter,
       };
       this.groupNodes.set(group.key, container);
 
-      if (group.key === "series" && group.seriesKeys) {
-        // 绘图元素：按元素再分一层子分组
+      const subgroupDefs = (group.subgroups && group.subgroups.length)
+        ? group.subgroups
+        : (group.key === "series" && group.seriesKeys ? group.seriesKeys : []);
+      if (subgroupDefs.length) {
+        // 二级分组：绘图元素（series）/ 各对象小节（标题、图例、量程…）
         container.subgroups = [];
+        const mainBody = h("div", {});
+        body.appendChild(mainBody);        // 不属于子分组的字段仍排在前面
         const rowsByKey = new Map();
-        group.seriesKeys.forEach((item) => {
+        subgroupDefs.forEach((item, index) => {
           const subBody = h("div", { class: "group-body" });
-          const subDetails = h("details", { class: "group", open: item.value === "maxTemp" }, [
+          const subDetails = h("details", {
+            // 展开大类时顺手展开第一个小节，避免「点开还要再点一层」
+            class: "group",
+            open: index === 0 || item.value === "maxTemp" || item.value === "basic",
+          }, [
             h("summary", {}, [h("span", { text: item.label })]),
             subBody,
           ]);
           body.appendChild(subDetails);
-          const sub = { details: subDetails, rows: [] };
+          const sub = { details: subDetails, body: subBody, rows: [], families: new Map() };
           container.subgroups.push(sub);
           rowsByKey.set(item.value, sub);
         });
         (group.fields || []).forEach((field) => {
-          const key = field.path.split(".")[1];
-          const sub = rowsByKey.get(key) || container.subgroups[0];
+          const raw = field.subgroup || field.path.split(".")[1];
+          const [top, family] = String(raw).split("|");
+          const sub = rowsByKey.get(top);
           const row = this.buildRow(field);
-          subBodyOf(sub).appendChild(row.node);
-          sub.rows.push(row);
+          if (!sub) {
+            mainBody.appendChild(row.node);
+            container.mainRows.push(row);
+          } else if (family) {
+            // 三级：元素内再按「基础 / 线与标记 / 柱状 / 数值标签」折叠
+            let fam = sub.families.get(family);
+            if (!fam) {
+              const famBody = h("div", { class: "group-body" });
+              const famDetails = h("details", { class: "group", open: family === "basic" }, [
+                h("summary", {}, [h("span", { text: field.subgroupLabel || family })]),
+                famBody,
+              ]);
+              sub.body.appendChild(famDetails);
+              fam = { details: famDetails, body: famBody, rows: [] };
+              sub.families.set(family, fam);
+            }
+            fam.body.appendChild(row.node);
+            fam.rows.push(row);
+          } else {
+            sub.body.appendChild(row.node);
+            sub.rows.push(row);
+          }
           container.rows.push(row);
+        });
+        // 过滤与计数按「块」进行：主区 / 各二级小节 / 各三级小节
+        container.blocks = [{ details: null, rows: container.mainRows }];
+        container.subgroups.forEach((sub) => {
+          container.blocks.push({ details: sub.details, rows: sub.rows });
+          sub.families.forEach((fam) => {
+            container.blocks.push({ details: fam.details, rows: fam.rows });
+          });
         });
       } else {
         (group.fields || []).forEach((field) => {
@@ -517,7 +575,8 @@ class ConfigForm {
         const first = numberInput("any");
         const second = numberInput("any");
         const line = h("div", { class: "control-line" }, [
-          first, second,
+          // 两个数字框作为一组：始终并排、等比收缩，空间不够时让提示文字换行
+          h("div", { class: "num-pair" }, [first, second]),
           h("span", { class: "muted small",
             text: kind === "num2_or_null" ? "两项都留空 = 自动" : "如 [12, 6]" }),
         ]);
@@ -532,6 +591,28 @@ class ConfigForm {
           const list = Array.isArray(value) ? value : [];
           first.value = list.length > 0 && list[0] !== null ? list[0] : "";
           second.value = list.length > 1 && list[1] !== null ? list[1] : "";
+        };
+        break;
+      }
+
+      case "enum_or_null": {
+        const select = h("select", { onchange: commit });
+        select.appendChild(h("option", { value: "", text: field.nullLabel || "（自动）" }));
+        field.enum.forEach((item) => {
+          select.appendChild(h("option", { value: String(item.value), text: item.label || String(item.value) }));
+        });
+        control.node = h("div", { class: "control-line" }, [select]);
+        control.read = () => {
+          if (select.value === "") return null;
+          const option = field.enum.find((item) => String(item.value) === select.value);
+          return option ? option.value : select.value;
+        };
+        control.write = (value) => {
+          const text = value === null || value === undefined ? "" : String(value);
+          if (text && !field.enum.some((item) => String(item.value) === text)) {
+            select.appendChild(h("option", { value: text, text: `${text}（当前值，不在候选内）` }));
+          }
+          select.value = text;
         };
         break;
       }
@@ -589,11 +670,15 @@ class ConfigForm {
       case "str":
       case "path": {
         const listId = `dl-${field.path.replace(/\./g, "-")}`;
-        const input = textInput({ list: (field.suggestions || []).length ? listId : null });
+        // 角度字段的候选是 textOptions（vertical / horizontal），其余用 suggestions
+        const candidates = kind === "rotation"
+          ? (field.textOptions || [])
+          : (field.suggestions || []);
+        const input = textInput({ list: candidates.length ? listId : null });
         control.node = h("div", { class: "control-line" }, [input]);
-        if ((field.suggestions || []).length) {
+        if (candidates.length) {
           const datalist = h("datalist", { id: listId });
-          field.suggestions.forEach((item) => datalist.appendChild(h("option", { value: item })));
+          candidates.forEach((item) => datalist.appendChild(h("option", { value: item })));
           control.node.appendChild(datalist);
         }
         if (kind === "grid") input.placeholder = "auto / 2x2 / 3x2";
@@ -622,14 +707,32 @@ class ConfigForm {
 
       case "list_enum": {
         const boxes = field.options.map((item) => {
-          const box = h("input", { type: "checkbox", value: String(item.value), onchange: commit });
+          const box = h("input", { type: "checkbox", value: String(item.value) });
           const label = h("label", {}, [box, h("span", { text: item.label || String(item.value) })]);
           return { box, label, value: item.value };
         });
+        const hint = h("span", { class: "muted small" });
+        const refreshLimit = () => {
+          const picked = boxes.filter((item) => item.box.checked).length;
+          if (field.maxItems) {
+            // 选满后禁用未勾选项，避免「点了才报错」
+            boxes.forEach((item) => {
+              item.box.disabled = !item.box.checked && picked >= field.maxItems;
+            });
+            hint.textContent = picked >= field.maxItems
+              ? `最多 ${field.maxItems} 项（已选满）`
+              : `最多可选 ${field.maxItems} 项（已选 ${picked}）`;
+          } else if (field.allowEmpty) {
+            hint.textContent = "都不选 = 不输出";
+          } else {
+            hint.textContent = "";
+          }
+        };
+        boxes.forEach((item) => {
+          item.box.addEventListener("change", () => { refreshLimit(); commit(); });
+        });
         control.node = h("div", { class: "checkbox-grid" }, boxes.map((item) => item.label));
-        if (field.allowEmpty) {
-          control.node.appendChild(h("span", { class: "muted small", text: "都不选 = 不输出" }));
-        }
+        control.node.appendChild(hint);
         control.read = () => {
           const selected = boxes.filter((item) => item.box.checked).map((item) => item.value);
           // 勾选集合没变时保留原有顺序，避免"只是重新渲染就显示已修改"
@@ -643,6 +746,7 @@ class ConfigForm {
         control.write = (value) => {
           const list = (Array.isArray(value) ? value : []).map((item) => String(item));
           boxes.forEach((item) => { item.box.checked = list.includes(String(item.value)); });
+          refreshLimit();
         };
         break;
       }

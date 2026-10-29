@@ -50,7 +50,6 @@ CHART_TYPE_ENUM: tuple[tuple[str, str], ...] = (
     ("smooth", "平滑曲线"),
     ("line", "折线"),
     ("bar", "柱状"),
-    ("barh", "横向柱状"),
     ("area", "面积"),
     ("step", "阶梯"),
     ("scatter", "散点"),
@@ -132,7 +131,7 @@ TEXT_PLACEHOLDERS: tuple[str, ...] = (
     "metric", "city_count",
 )
 #: 仅对比图 / 多图可用的占位符（单城出图时会出现 KeyError）
-COMPARE_ONLY_PLACEHOLDERS: tuple[str, ...] = ("metric", "city_count")
+COMPARE_ONLY_PLACEHOLDERS: tuple[str, ...] = ("metric", "metrics", "mode", "city_count")
 
 #: 预设颜色（键值表里「颜色」下拉的候选）：前 8 个就是 ``compare.colors`` 的默认序列，
 #: 其余为官方页面配色与常用色。
@@ -187,6 +186,15 @@ class Field:
     allow_empty: bool = True
     extra: bool = False
     readonly: bool = False
+    #: ``list_enum`` 最多可选几项（0 = 不限）
+    max_items: int = 0
+    #: 所属子分组键（``series.<元素>.*`` / ``compare.element_styles.<元素>.*``）；
+    #: 形如 ``"maxTemp|line"`` 时表示三级：元素内再按属性族分小节
+    subgroup: str = ""
+    #: 三级小节（属性族）的显示名，如「线与标记」「柱状」
+    subgroup_label: str = ""
+    #: ``enum_or_null`` 里「空值」选项的文案
+    null_label: str = "（自动）"
     #: 映射类型的语义：键是什么（``city`` = 城市显示名，候选由城市上下文提供）
     key_kind: str = ""
     #: 映射类型的语义：值是什么（``color`` = 颜色，候选见 ``value_options``）
@@ -214,6 +222,10 @@ class Field:
             "allowEmpty": self.allow_empty,
             "extra": self.extra,
             "readonly": self.readonly,
+            "maxItems": self.max_items,
+            "subgroup": self.subgroup,
+            "subgroupLabel": self.subgroup_label,
+            "nullLabel": self.null_label,
             "keyKind": self.key_kind,
             "valueKind": self.value_kind,
             "valueOptions": [{"value": v, "label": t} for v, t in self.value_options],
@@ -231,6 +243,8 @@ class Group:
     series: bool = False       # True = 该组的字段按 series 元素展开
     axes: bool = False         # True = 该组是纵轴（字段来自 AXES_FIELDS）
     prefix: str = ""           # 字段写的是相对路径时，用它补前缀
+    #: 二级子分组 ``(键, 标题)``；字段用 ``Field.subgroup`` 归属，界面渲染成二级折叠块
+    subgroups: tuple[tuple[str, str], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -239,21 +253,25 @@ class Group:
             "desc": self.desc,
             "series": self.series,
             "axes": self.axes,
+            "subgroups": [{"value": k, "label": v} for k, v in self.subgroups],
             "fields": [f.to_dict() for f in group_fields(self)],
         }
 
 
 def group_fields(group: "Group") -> tuple[Field, ...]:
-    """把分组里的字段展开为带完整点路径的字段列表。"""
+    """把分组里的字段展开为带完整点路径的字段列表（并按「对象」打二级分组标记）。"""
     if group.series:
-        return tuple(f for key in SERIES_KEYS for f in series_fields(key))
-    if group.axes:
-        return axes_fields(group.key)
-    if group.prefix:
-        return tuple(
+        fields = tuple(f for key in SERIES_KEYS for f in series_fields(key))
+    elif group.axes:
+        fields = axes_fields(group.key)
+    elif group.prefix:
+        fields = tuple(
             Field(**{**f.__dict__, "path": f"{group.prefix}.{f.path}"}) for f in group.fields
         )
-    return group.fields
+    else:
+        fields = group.fields
+    rules = SUBTREE.get(group.key, ((), ()))[0]
+    return _tag_subgroups(fields, rules) if rules else fields
 
 
 class FieldError(ValueError):
@@ -311,6 +329,14 @@ def C(path: str, label: str, desc: str = "",
 # =========================================================================
 # A. data —— 数据与字段口径
 # =========================================================================
+
+#: 纵轴内部的小节：基础 / 轴标题 / 量程与刻度 / 轴脊（二级分组定义在 GROUPS 之后复用）
+AXES_FAMILIES: tuple[tuple[str, str], ...] = (
+    ("basic", "基础"),
+    ("label", "轴标题"),
+    ("range", "量程与刻度"),
+    ("spine", "轴脊"),
+)
 
 DATA_FIELDS: tuple[Field, ...] = (
     S("data.lang", "语言版本",
@@ -389,7 +415,9 @@ OUTPUT_FIELDS: tuple[Field, ...] = (
     T("output.table_name_template", "表格文件名模板",
       FILE_PLACEHOLDERS, "默认不带配置名后缀。"),
     T("output.compare_name_template", "对比图文件名模板",
-      ("city_count", "metric", "cities", "profile")),
+      ("city_count", "metric", "metrics", "mode", "cities", "profile"),
+      "多元素时 {metric} 会自动展开成全部元素（如 minTemp-rainfall），"
+      "overlay 再加 _overlay 后缀；{metrics} 恒为全部元素用 - 连接，{mode} = facet / overlay。"),
     T("output.multi_name_template", "多图文件名模板",
       ("city_count", "cities", "grid", "profile"), "含 {grid} 可避免不同排列互相覆盖。"),
     _f("output.table_formats", "list_enum", "表格格式",
@@ -641,6 +669,13 @@ SERIES_FIELDS: tuple[Field, ...] = (
     FL("markeredgewidth", "标记边宽", "", lo=0, step=0.1),
     I("markevery", "标记间隔", "每隔 N 个点显示一个标记。", lo=1, hi=12),
     FL("bar_width", "柱宽", "仅柱状图有效。", lo=0, hi=1, step=0.05),
+    E("bar_fill", "柱填充方式",
+      (("solid", "实心（纯色填充）"), ("hollow", "空心（仅边框）"), ("hatch", "纹理填充")),
+      "仅柱状图有效。空心时边框色留空则取系列色；纹理填充的纹理色与边框同色。"),
+    S("bar_hatch", "柱纹理样式",
+      "matplotlib hatch：/ \\ | - + x o O . *；重复字符可加密（如 ///）；留空 = /。"
+      "纹理填充时生效；实心下填写则在纯色上叠加纹理。",
+      suggestions=("/", "//", "///", "\\\\", "|", "-", "+", "x", "o", "O", ".", "*")),
     C("bar_edgecolor", "柱边线色", "", specials=("none", "auto")),
     FL("bar_linewidth", "柱边线宽", "", lo=0, step=0.1),
     E("bar_align", "柱对齐", (("center", "居中"), ("edge", "靠边"))),
@@ -701,12 +736,62 @@ TABLE_FIELDS: tuple[Field, ...] = (
 # I. compare —— 多城市对比图
 # =========================================================================
 
+#: element_styles 的二级子分组：5 个元素 × （图形类型 / 线型 / 标记）
+ELEMENT_STYLE_SUBGROUPS: tuple[tuple[str, str], ...] = tuple(
+    (key, f"{label}（{key}）") for key, label in SERIES_LABELS.items()
+)
+
+
+def _element_style_fields() -> tuple[Field, ...]:
+    """``compare.element_styles.<元素>.{chart_type,linestyle,marker}``（仅 overlay 生效）。"""
+    result: list[Field] = []
+    for key, _label in SERIES_LABELS.items():
+        result.append(_f(
+            f"compare.element_styles.{key}.chart_type", "enum_or_null", "图形类型",
+            "留空 = 跟随「对比图形类型」（默认跟随状态下降水类画柱、气温类画线）。",
+            enum=CHART_TYPE_ENUM, subgroup=key, null_label="跟随对比图形类型（默认）",
+        ))
+        result.append(_f(
+            f"compare.element_styles.{key}.linestyle", "enum", "线型",
+            enum=LINESTYLE_ENUM, subgroup=key,
+        ))
+        result.append(_f(
+            f"compare.element_styles.{key}.marker", "enum", "标记",
+            enum=MARKER_ENUM, subgroup=key,
+        ))
+    return tuple(result)
+
+
 COMPARE_FIELDS: tuple[Field, ...] = (
-    E("compare.metric", "对比元素", SERIES_ENUM),
+    E("compare.metric", "对比元素（单元素）", SERIES_ENUM,
+      "单个元素；「多元素对比」非空时被覆盖。"),
+    _f("compare.metrics", "list_enum", "多元素对比",
+       "勾选 2–4 个元素：facet 一格一元素，overlay 同图叠加；"
+       "顺序即分面顺序与「同要素一行」图例的列序，只勾 1 个等价于单元素。",
+       options=SERIES_ENUM, max_items=4),
+    E("compare.mode", "多元素呈现方式",
+      (("facet", "分面：一格一元素"), ("overlay", "叠加：同一张图（颜色=城市、线型=元素）")),
+      "仅多元素时生效，单元素仍走原单图路径。"),
+    _f("compare.grid", "grid", "分面排版（列x行）",
+       "auto = 按元素数自动；或「列x行」如 2x2（分隔符 x / × / * / , 均可，前=列、后=行）。"
+       "仅 facet 多元素时生效。",
+       suggestions=("auto", "1x2", "2x1", "2x2", "3x2", "2x3")),
+    _f("compare.facet_figsize", "num2_or_null", "分面画布尺寸",
+       "null = 每格约「对比图画布尺寸」的 70% 宽自动推算。"),
+    E("compare.share_ylim", "分面纵轴量程",
+      (("row", "同一行同单位元素共用量程"), ("none", "各格独立"))),
+    _f("compare.hspace", "num_or_null", "分面行间距", "null = 0.34。"),
+    _f("compare.wspace", "num_or_null", "分面列间距", "null = 0.22。"),
+    E("compare.sort_metric", "多元素排序基准",
+      (("", "自动（第一个元素）"),) + SERIES_ENUM,
+      "只影响多元素：保证各格城市顺序一致。"),
     E("compare.chart_type", "对比图形类型", CHART_TYPE_ENUM),
     _f("compare.figsize", "num2", "对比图画布尺寸", "单位：英寸 [宽, 高]。"),
     T("compare.title_text", "对比图标题模板",
       TEXT_PLACEHOLDERS + ("metric", "city_count")),
+    T("compare.title_text_multi", "多元素对比标题模板",
+      TEXT_PLACEHOLDERS + ("metrics", "metric_count", "city_count"),
+      "仅多元素时使用；{metrics} 用 - 连接全部元素，{metric_count} 为元素个数。"),
     _f("compare.colors", "list_color", "城市配色序列",
        "按顺序分配给城市；不足则循环或自动生成。"),
     _f("compare.color_map", "str_map", "指定城市颜色",
@@ -719,26 +804,62 @@ COMPARE_FIELDS: tuple[Field, ...] = (
        key_kind="city", value_kind="color", value_options=COLOR_PRESETS, extra=True),
     E("compare.color_by", "取色依据",
       (("order", "按传入顺序"), ("city_id", "按城市编号"))),
-    _f("compare.linestyle_cycle", "list_str", "线型循环",
+    _f("compare.linestyle_cycle", "list_str", "线型循环（按城市）",
+       "按城市顺序轮换：颜色统一（如全黑）时靠它区分城市；"
+       "「样式轮换维度」为 metric 时改为按元素轮换。",
        suggestions=("-", "--", "-.", ":")),
-    _f("compare.marker_cycle", "list_str", "标记循环",
+    _f("compare.marker_cycle", "list_str", "标记循环（按城市）",
+       "同上，按城市顺序轮换标记。",
        suggestions=("o", "s", "^", "D", "v", "P", "X", "*")),
+    E("compare.style_dimension", "样式轮换维度",
+      (("city", "按城市（颜色统一时靠线型/标记区分城市）"),
+       ("metric", "按元素（旧行为：元素样式里的线型/标记生效）"),
+       ("hybrid", "线型按城市、标记按元素")),
+      "决定线型与标记按哪个维度轮换；柱的填充/纹理跟随同一维度"
+      "（city / hybrid 按城市，metric 按元素）。"),
     FL("compare.linewidth", "线宽", "", lo=0, step=0.1),
     FL("compare.markersize", "标记大小", "", lo=0, step=0.5),
     FL("compare.alpha", "透明度", "", lo=0, hi=1, step=0.05),
     FL("compare.bar_width", "总柱宽", "柱状模式下按城市数均分。", lo=0, hi=1, step=0.05),
+    E("compare.bar_fill", "柱填充方式（全局兜底）",
+      (("solid", "实心（纯色填充）"), ("hollow", "空心（仅边框）"), ("hatch", "纹理填充")),
+      "仅柱状对比有效；「柱填充方式（按城市轮换）」非空时被它覆盖。"),
+    S("compare.bar_hatch", "柱纹理样式（全局兜底）",
+      "matplotlib hatch：/ \\ | - + x o O . *；重复字符可加密（如 ///）；留空 = /。",
+      suggestions=("/", "//", "///", "\\\\", "|", "-", "+", "x", "o", "O", ".", "*")),
+    _f("compare.bar_fill_cycle", "list_enum", "柱填充方式（按城市轮换）",
+       "按城市顺序轮换，如 [实心, 空心, 纹理] 让三个城市同色也能区分；"
+       "非空时覆盖上面的全局兜底。",
+       options=(("solid", "实心"), ("hollow", "空心（仅边框）"), ("hatch", "纹理填充"))),
+    _f("compare.bar_hatch_cycle", "list_str", "柱纹理样式（按城市轮换）",
+       "按城市顺序轮换；留空项 = 该城市不加纹理；非空时覆盖全局兜底。",
+       suggestions=("/", "//", "///", "\\\\", "x", "o", "O", ".", "*")),
+    C("compare.bar_edgecolor", "柱边线色", "", specials=("none",)),
+    FL("compare.bar_linewidth", "柱边线宽", "空心时留 0 会自动取 1.2。", lo=0, step=0.1),
     E("compare.sort_by", "排序方式",
       (("none", "不排序"), ("value_desc", "数值降序"), ("value_asc", "数值升序"),
        ("name", "按城市名"), ("city_id", "按城市编号"))),
     B("compare.show_value_range", "图例显示数值范围", ""),
     T("compare.label_template", "图例名模板", ("city",)),
-    I("compare.legend_ncol", "图例列数", "0 = 自动。", lo=0, hi=20),
+    I("compare.legend_ncol", "图例列数（旧键）", "0 = 自动；多元素时以「多元素图例列数」优先。",
+      lo=0, hi=20),
+    E("compare.legend.position", "多元素图例位置",
+      (("inside", "坐标区内"), ("bottom", "横轴下方"), ("top", "坐标区上方")),
+      "仅多元素时生效。"),
+    E("compare.legend.layout", "多元素图例排列",
+      (("city", "同城一行"), ("metric", "同要素一行"), ("auto", "自然顺序")),
+      "仅多元素时生效。"),
+    FL("compare.legend.gap", "图例与横轴距离",
+       "坐标区高度比例；position=inside 时为区内相对位置。", lo=0, hi=1, step=0.01),
+    FL("compare.legend.reserve", "底部预留比例",
+       "position=bottom 时给图例腾出的下边距（整图比例）。", lo=0, hi=0.8, step=0.01),
+    I("compare.legend.ncol", "多元素图例列数", "0 = 按排列方式自动。", lo=0, hi=20),
     B("compare.data_labels.show", "显示数值标签", ""),
     FL("compare.data_labels.fontsize", "数值标签字号", "", lo=1, step=0.5),
     S("compare.data_labels.format", "数值标签格式", "",
       suggestions=("{:.1f}", "{:.0f}", "{:.2f}")),
     FL("compare.data_labels.offset", "数值标签偏移", "", step=1, unit="点"),
-)
+) + _element_style_fields()
 
 # =========================================================================
 # J. multi —— 多图（多城市同画布）
@@ -756,6 +877,13 @@ MULTI_FIELDS: tuple[Field, ...] = (
        "null = 单个画布尺寸 × (列, 行)，保证每格绘图区与单图一致。"),
     _f("multi.wspace", "num_or_null", "列间距", "null = 交给布局引擎决定。"),
     _f("multi.hspace", "num_or_null", "行间距", "null = 交给布局引擎决定。"),
+)
+
+#: ``figure.legend.*`` 的 14 个参数在表单里单独成组（单图 / 对比图 / 多图通用）
+FIGURE_FIELDS = tuple(
+    Field(**{**f.__dict__, "subgroup": "legend"})
+    if f.path.startswith("figure.legend.") else f
+    for f in FIGURE_FIELDS
 )
 
 # =========================================================================
@@ -780,8 +908,9 @@ GROUPS: tuple[Group, ...] = (
           "输出目录、文件名模板、表格与图片格式、覆盖策略。",
           OUTPUT_FIELDS),
     Group("figure", "D. 画布与版式",
-          "画布尺寸、字体、标题、副标题、图例、网格、背景色带、标注与署名。",
-          FIGURE_FIELDS),
+          "画布尺寸、字体、标题、副标题、图例、网格、背景色带、标注与署名。"
+          "图例参数集中在本组的「图例」小节，单图 / 对比图 / 多图通用。",
+          FIGURE_FIELDS, subgroups=(("legend", "图例（单图 / 对比图 / 多图通用）"),)),
     Group("axes_primary", "E1. 主轴（温度）",
           "左轴：量程、刻度、轴标题与轴脊。", AXES_FIELDS, axes=True),
     Group("axes_secondary", "E2. 副轴（降水）",
@@ -796,19 +925,270 @@ GROUPS: tuple[Group, ...] = (
     Group("table", "H. 表格",
           "行项目与顺序、行名、转置、精度、脚注与 XLSX 样式。", TABLE_FIELDS),
     Group("compare", "I. 多城市对比图",
-          "对比元素、配色、排序、图例与数值标签。", COMPARE_FIELDS),
+          "单元素 / 多元素对比：分面或同图叠加、配色排序、图例与数值标签。"
+          "图例的样式（字号、边框、底色、标题）在 D 组「图例」里；本组只放多元素专属的"
+          "排列方式与位置。",
+          COMPARE_FIELDS, subgroups=ELEMENT_STYLE_SUBGROUPS),
     Group("multi", "J. 多图（多城市同画布）",
           "排列方式、图例方式、纵轴量程策略与间距。", MULTI_FIELDS),
+)
+
+# =========================================================================
+# 二级分组：把「处理同一个对象」的字段收进同一个小节
+# =========================================================================
+#: 大类 → 打标规则 ``(路径前缀, 子分组键)``；按顺序匹配、命中即止。
+#: 字段若已显式声明 ``subgroup``（如 compare.element_styles 的元素名、axes 的族），
+#: 这里不会再覆盖它。
+SUBTREE_RULES: dict[str, tuple[tuple[str, str], ...]] = {
+    "data": (
+        ("data.coord.", "coord"),
+        ("data.city_short_name", "city"),
+        ("data.", "basic"),
+    ),
+    "fetch": (
+        ("fetch.cache.", "cache"),
+        ("fetch.headers", "raw"),
+        ("fetch.save_raw", "raw"),
+        ("fetch.raw_dir", "raw"),
+        ("fetch.base_url", "path"),
+        ("fetch.data_path", "path"),
+        ("fetch.city_index_path", "path"),
+        ("fetch.verify_ssl", "net"),
+        ("fetch.proxy", "net"),
+        ("fetch.use_env_proxy", "net"),
+        ("fetch.", "retry"),
+    ),
+    "output": (
+        ("output.out_dir", "dir"),
+        ("output.name_template", "name"),
+        ("output.table_name_template", "name"),
+        ("output.compare_name_template", "name"),
+        ("output.multi_name_template", "name"),
+        ("output.table_formats", "format"),
+        ("output.chart_formats", "format"),
+        ("output.chart_dpi", "format"),
+        ("output.", "misc"),
+    ),
+    "figure": (
+        ("figure.title.", "title"),
+        ("figure.subtitle.", "subtitle"),
+        ("figure.legend.", "legend"),
+        ("figure.grid.", "grid"),
+        ("figure.background.", "bands"),
+        ("figure.zeroline.", "zeroline"),
+        ("figure.mean_rain_line.", "rainline"),
+        ("figure.annotation.", "annotation"),
+        ("figure.credit.", "credit"),
+        ("figure.subplots_adjust.", "layout"),
+        ("figure.layout", "layout"),
+        ("figure.font_", "font"),
+        ("figure.axes_unicode_minus", "font"),
+        ("figure.svg_fonttype", "font"),
+        ("figure.pdf_fonttype", "font"),
+        ("figure.", "canvas"),
+    ),
+    "axes_x": (
+        ("axes_x.show", "label"),
+        ("axes_x.label_", "label"),
+        ("axes_x.tick_", "tick"),
+        ("axes_x.show_month_gridline", "grid"),
+        ("axes_x.grid_", "grid"),
+        ("axes_x.show_spine", "spine"),
+        ("axes_x.spine_", "spine"),
+        ("axes_x.limit_pad", "spine"),
+    ),
+    "table": (
+        ("table.xlsx.", "xlsx"),
+        ("table.precision.", "value"),
+        ("table.missing_placeholder", "value"),
+        ("table.unit_in_label", "value"),
+        ("table.show_title_row", "title"),
+        ("table.title_template", "title"),
+        ("table.show_period_note", "title"),
+        ("table.note_template", "title"),
+        ("table.show_source_note", "title"),
+        ("table.", "struct"),
+    ),
+    "compare": (
+        ("compare.colors", "color"),
+        ("compare.color_map", "color"),
+        ("compare.color_by", "color"),
+        ("compare.linestyle_cycle", "style"),
+        ("compare.marker_cycle", "style"),
+        ("compare.linewidth", "style"),
+        ("compare.markersize", "style"),
+        ("compare.alpha", "style"),
+        ("compare.bar_", "style"),
+        ("compare.grid", "layout"),
+        ("compare.facet_figsize", "layout"),
+        ("compare.share_ylim", "layout"),
+        ("compare.hspace", "layout"),
+        ("compare.wspace", "layout"),
+        ("compare.figsize", "layout"),
+        ("compare.sort_by", "legend"),
+        ("compare.sort_metric", "legend"),
+        ("compare.show_value_range", "legend"),
+        ("compare.label_template", "legend"),
+        ("compare.legend", "legend"),
+        ("compare.title_text", "title"),
+        ("compare.data_labels.", "labels"),
+        ("compare.", "basic"),
+    ),
+    "multi": (
+        ("multi.legend", "legend"),
+        ("multi.share_ylim", "legend"),
+        ("multi.", "layout"),
+    ),
+}
+
+#: 大类 → 二级分组定义 ``(键, 标题)``（顺序即界面顺序）
+SUBTREE_LABELS: dict[str, tuple[tuple[str, str], ...]] = {
+    "data": (
+        ("basic", "单位与取值口径"),
+        ("city", "城市名显示"),
+        ("coord", "经纬度显示"),
+    ),
+    "fetch": (
+        ("path", "站点与路径"),
+        ("retry", "超时 · 重试 · 限速"),
+        ("net", "网络与证书"),
+        ("cache", "本地缓存"),
+        ("raw", "原始响应与请求头"),
+    ),
+    "output": (
+        ("dir", "输出目录"),
+        ("name", "文件名模板"),
+        ("format", "格式与清晰度"),
+        ("misc", "覆盖策略与日志"),
+    ),
+    "figure": (
+        ("canvas", "画布"),
+        ("layout", "版式与边距"),
+        ("font", "字体与文字渲染"),
+        ("title", "标题"),
+        ("subtitle", "副标题"),
+        ("legend", "图例（单图 / 对比图 / 多图通用）"),
+        ("grid", "网格"),
+        ("bands", "背景色带"),
+        ("zeroline", "0 基准线"),
+        ("rainline", "平均降水线"),
+        ("annotation", "极值标注"),
+        ("credit", "数据来源署名"),
+    ),
+    "axes_primary": AXES_FAMILIES,
+    "axes_secondary": AXES_FAMILIES,
+    "axes_tertiary": AXES_FAMILIES,
+    "axes_x": (
+        ("label", "横轴标题"),
+        ("tick", "月份标签与刻度"),
+        ("grid", "月份竖线"),
+        ("spine", "轴脊与留白"),
+    ),
+    "table": (
+        ("struct", "表格结构"),
+        ("value", "数值与单位"),
+        ("title", "标题与脚注"),
+        ("xlsx", "Excel 样式"),
+    ),
+    "compare": (
+        ("basic", "元素与呈现"),
+        ("layout", "分面版式"),
+        ("color", "城市配色"),
+        ("style", "样式（按城市轮换）"),
+        ("legend", "排序与图例"),
+        ("title", "标题"),
+        ("labels", "数值标签"),
+    ),
+    "multi": (
+        ("layout", "排列与尺寸"),
+        ("legend", "图例与量程"),
+    ),
+}
+
+
+def _tag_subgroups(fields: tuple[Field, ...],
+                   rules: tuple[tuple[str, str], ...]) -> tuple[Field, ...]:
+    """按「对象」给字段打二级分组标记；已显式声明 ``subgroup`` 的字段保持原样。"""
+    tagged: list[Field] = []
+    for f in fields:
+        key = f.subgroup
+        if not key:
+            for pattern, sub in rules:
+                if f.path.startswith(pattern):
+                    key = sub
+                    break
+        tagged.append(Field(**{**f.__dict__, "subgroup": key}) if key != f.subgroup else f)
+    return tuple(tagged)
+
+
+def _merge_labels(base: tuple[tuple[str, str], ...],
+                  extra: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
+    """合并二级分组定义（按 key 去重，base 的顺序与标题优先）。"""
+    seen = {key for key, _label in base}
+    return tuple(base) + tuple(item for item in extra if item[0] not in seen)
+
+
+SUBTREE: dict[str, tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]] = {
+    key: (SUBTREE_RULES.get(key, ()), SUBTREE_LABELS.get(key, ()))
+    for key in set(SUBTREE_RULES) | set(SUBTREE_LABELS)
+}
+
+GROUPS = tuple(
+    Group(**{**g.__dict__, "subgroups": _merge_labels(SUBTREE[g.key][1], g.subgroups)})
+    if g.key in SUBTREE else g
+    for g in GROUPS
 )
 
 
 # ---- 索引与展开 ----------------------------------------------------------
 
+#: 单个元素内部的三级小节：基础 / 线与标记 / 柱状 / 平滑与面积 / 数值标签
+SERIES_FAMILIES: tuple[tuple[str, str], ...] = (
+    ("basic", "基础"),
+    ("line", "线与标记"),
+    ("bar", "柱状"),
+    ("area", "平滑与面积"),
+    ("labels", "数值标签"),
+)
+_SERIES_FAMILY_PATHS: dict[str, tuple[str, ...]] = {
+    "line": ("linewidth", "linestyle", "marker", "markersize", "markerfacecolor",
+             "markeredgecolor", "markeredgewidth", "markevery"),
+    "bar": ("bar_width", "bar_fill", "bar_hatch", "bar_edgecolor", "bar_linewidth", "bar_align"),
+    "area": ("smooth_points", "fill_alpha", "fill_between_key"),
+    "labels": ("data_labels.",),
+}
+
+
+def _series_family(path: str) -> str:
+    for key, patterns in _SERIES_FAMILY_PATHS.items():
+        if any(path == item or path.startswith(item) for item in patterns):
+            return key
+    return "basic"
+
+
 def series_fields(key: str) -> tuple[Field, ...]:
-    """把 ``SERIES_FIELDS`` 的相对路径展开为 ``series.<key>.<子项>``。"""
+    """把 ``SERIES_FIELDS`` 的相对路径展开为 ``series.<key>.<子项>``。
+
+    ``subgroup`` 用 ``"<元素>|<属性族>"`` 表示三级分组：表单里先按元素、再按属性族折叠。
+    """
+    labels = dict(SERIES_FAMILIES)
     return tuple(
-        Field(**{**f.__dict__, "path": f"series.{key}.{f.path}"}) for f in SERIES_FIELDS
+        Field(**{**f.__dict__,
+                 "path": f"series.{key}.{f.path}",
+                 "subgroup": f"{key}|{_series_family(f.path)}",
+                 "subgroup_label": labels[_series_family(f.path)]})
+        for f in SERIES_FIELDS
     )
+
+
+def _axes_family(path: str) -> str:
+    if path.startswith("label_"):
+        return "label"
+    if path.startswith("tick_") or path in ("limit", "limit_shift", "auto_pad_ratio", "scale"):
+        return "range"
+    if path.startswith("spine_") or path == "hide_top_spine":
+        return "spine"
+    return "basic"
 
 
 def axes_fields(prefix: str) -> tuple[Field, ...]:
@@ -817,7 +1197,8 @@ def axes_fields(prefix: str) -> tuple[Field, ...]:
     for f in AXES_FIELDS:
         if f.path == "offset_points" and prefix != "axes_tertiary":
             continue
-        result.append(Field(**{**f.__dict__, "path": f"{prefix}.{f.path}"}))
+        result.append(Field(**{**f.__dict__, "path": f"{prefix}.{f.path}",
+                               "subgroup": _axes_family(f.path)}))
     return tuple(result)
 
 
@@ -848,6 +1229,8 @@ def empty_value(field: Field) -> Any:
     if kind == "num2":
         return [] if field.allow_empty else None
     if kind in ("int", "float", "int_or_null", "num_or_null", "num2_or_null"):
+        return None
+    if kind == "enum_or_null":
         return None
     if kind == "enum":
         return field.enum[0][0] if field.enum else None
@@ -1035,7 +1418,19 @@ def normalize_value(f: Field, raw: Any) -> Any:
             raise FieldError(f.path, f"需要两个数字（如 [12, 6]）或 null，收到 {len(items)} 个")
         return [_to_number(items[0], f.path), _to_number(items[1], f.path)]
 
+    if kind == "enum_or_null":
+        # 空值（null / 空串）表示「不指定」，交给绘图代码回落默认
+        if raw is None or (isinstance(raw, str) and raw.strip() == ""):
+            return None
+        for value, _label in f.enum:
+            if str(raw) == str(value):
+                return value
+        allowed = "、".join(str(v) for v, _ in f.enum)
+        raise FieldError(f.path, f"只能是 {allowed} 之一或留空，收到 {raw!r}")
+
     if kind == "enum":
+        # null 视作空串：部分枚举本身就有 "" 选项（如 marker「不显示」）
+        text = "" if raw is None else str(raw)
         for value, _label in f.enum:
             if f.coerce == "int":
                 try:
@@ -1043,7 +1438,7 @@ def normalize_value(f: Field, raw: Any) -> Any:
                         return int(value)
                 except FieldError:
                     continue
-            elif str(raw) == str(value):
+            elif text == str(value):
                 return value
         allowed = "、".join(str(v) for v, _ in f.enum)
         raise FieldError(f.path, f"只能是 {allowed} 之一，收到 {raw!r}")
@@ -1103,6 +1498,8 @@ def normalize_value(f: Field, raw: Any) -> Any:
                 )
             if match not in result:
                 result.append(match)
+        if f.max_items and len(result) > f.max_items:
+            raise FieldError(f.path, f"最多选择 {f.max_items} 项（当前 {len(result)} 项）")
         if not result and not f.allow_empty:
             raise FieldError(f.path, "至少要选择一项")
         return result

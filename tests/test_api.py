@@ -136,6 +136,39 @@ check(len(color_map_field["valueOptions"]) >= 8,
       f"color_map 应提供 ≥8 个预设颜色，实际 {len(color_map_field['valueOptions'])}")
 check(color_map_field["extra"] is True, "color_map 应标记为扩展键")
 
+check(compare_fields["compare.metrics"]["maxItems"] == 4,
+      "compare.metrics 应向前端暴露 maxItems=4")
+legend_fields = [f for f in groups["figure"]["fields"] if f["path"].startswith("figure.legend.")]
+check(any(item["value"] == "legend" for item in groups["figure"].get("subgroups") or []),
+      "画布分组应把图例参数单独成组")
+check(len(legend_fields) >= 14 and all(f["subgroup"] == "legend" for f in legend_fields),
+      f"figure.legend.* 应全部归入「图例」子组，实际 {len(legend_fields)} 项")
+compare_sub_keys = [item["value"] for item in groups["compare"].get("subgroups") or []]
+check(all(key in compare_sub_keys
+          for key in ("minTemp", "maxTemp", "meanTemp", "rainfall", "raindays")),
+      f"compare 分组应保留 5 个元素样式子分组，实际 {compare_sub_keys}")
+check({"basic", "layout", "color", "style", "legend"} <= set(compare_sub_keys),
+      f"compare 分组应按对象给出小节，实际 {compare_sub_keys}")
+check(any(f["subgroup"] for f in groups["compare"]["fields"]),
+      "元素样式字段应带 subgroup，前端才能渲染成 5 个小组")
+
+# 二级/三级分层：除 meta 外每个大类都要有子分组；series 用「元素|属性族」表示三级
+empties = [group_key for group_key, group in groups.items()
+           if group_key not in ("meta", "series") and not (group.get("subgroups") or [])]
+check(not empties, f"除 meta / series 外每个大类都应有子分组，实际缺：{empties}")
+check(bool(groups["series"].get("seriesKeys")),
+      "series 分组应以元素（seriesKeys）作为一级分组")
+check(len(groups["figure"].get("subgroups") or []) >= 10,
+      f"画布分组应按对象拆成 ≥10 个小节，实际 {len(groups['figure'].get('subgroups') or [])}")
+series_fields_all = groups["series"]["fields"]
+check(all("|" in f["subgroup"] for f in series_fields_all),
+      "series 字段的 subgroup 应是「元素|属性族」形式（三级分组）")
+check(all(f["subgroupLabel"] for f in series_fields_all),
+      "series 字段应带 subgroupLabel，供三级小节标题使用")
+series_families = {f["subgroup"].split("|")[1] for f in series_fields_all}
+check({"basic", "line", "bar", "labels"} <= series_families,
+      f"series 属性族应至少含 基础/线/柱/标签，实际 {sorted(series_families)}")
+
 status, payload = api("GET", "/api/profiles")
 check(status == 200 and any(p["name"] == "default" for p in payload["profiles"]),
       "配置清单应含 default")
@@ -401,6 +434,31 @@ frames = raw.count(b"data: ")
 check(frames >= 1, f"SSE 应至少推送一帧，实际 {frames}")
 check(b'"status"' in raw or b'"type"' in raw, f"SSE 帧应含状态信息，实际 {raw[:120]!r}")
 
+# 柱填充方式（纹理）应能通过接口出图
+status, payload = api("POST", "/api/render", {
+    "mode": "city", "cities": ["237"], "profile": "default",
+    "values": {**FAST, "series.rainfall.bar_fill": "hatch",
+               "series.rainfall.bar_hatch": "///",
+               "output.name_template": "_apitest_bar_{profile}"},
+    "save_files": True,
+})
+bar_id = (payload.get("task") or {}).get("id")
+snapshot = {}
+deadline = time.time() + 240
+while time.time() < deadline:
+    status, snapshot = api("GET", f"/api/render/{bar_id}?cursor=0&wait=10")
+    if snapshot.get("status") in ("done", "error", "cancelled"):
+        break
+check(snapshot.get("status") == "done", f"纹理填充柱状图应完成，实际 {snapshot.get('status')}")
+bar_city = (snapshot.get("result") or {}).get("cities") or []
+check(bool(bar_city and bar_city[0].get("charts")),
+      f"纹理填充柱状图应产出图片，实际 {bar_city[:1]}")
+for path in (bar_city[0].get("files") if bar_city else []) or []:
+    try:
+        Path(path).unlink()
+    except OSError:
+        pass
+
 # ---- 多图与对比 ----------------------------------------------------------
 
 status, payload = api("POST", "/api/render", {
@@ -443,6 +501,102 @@ check(snapshot.get("status") == "done", f"对比任务应完成，实际 {snapsh
 compare = (snapshot.get("result") or {}).get("compare") or {}
 check(compare.get("series"), f"对比图应报告对比要素，实际 {compare}")
 for path in compare.get("files") or []:
+    try:
+        Path(path).unlink()
+    except OSError:
+        pass
+
+# 城市名类型统一：短名开启时，结果清单与文件名都不应再出现完整名（含「，」）
+status, payload = api("POST", "/api/render", {
+    "mode": "multi", "cities": ["637", "634"], "grid": "1x2", "profile": "default",
+    "values": {**FAST, "data.city_short_name": True,
+               "output.multi_name_template": "{cities}"},
+    "save_files": True,
+})
+name_id = (payload.get("task") or {}).get("id")
+snapshot = {}
+deadline = time.time() + 240
+while time.time() < deadline:
+    status, snapshot = api("GET", f"/api/render/{name_id}?cursor=0&wait=10")
+    if snapshot.get("status") in ("done", "error", "cancelled"):
+        break
+check(snapshot.get("status") == "done", f"短名多图任务应完成，实际 {snapshot.get('status')}")
+named = (snapshot.get("result") or {}).get("multi") or {}
+drawn_names = [item["name"] for item in named.get("drawn") or []]
+check(len(drawn_names) == 2 and all("，" not in name for name in drawn_names),
+      f"短名开启时结果清单应用短名，实际 {drawn_names}")
+check(all("，" not in Path(path).stem for path in named.get("files") or []),
+      f"短名开启时文件名不应用完整名，实际 {named.get('files')}")
+for path in named.get("files") or []:
+    try:
+        Path(path).unlink()
+    except OSError:
+        pass
+
+# 多元素对比：facet（一格一元素）与 overlay（同图叠加）
+for compare_mode in ("facet", "overlay"):
+    status, payload = api("POST", "/api/render", {
+        "mode": "compare", "cities": ["237", "1"], "profile": "compare",
+        "values": {**FAST,
+                   "compare.metrics": ["minTemp", "maxTemp"],
+                   "compare.grid": "1x2",
+                   "compare.mode": compare_mode,
+                   "output.compare_name_template": f"_apitest_compare_{compare_mode}"},
+        "save_files": True,
+    })
+    task_id = (payload.get("task") or {}).get("id")
+    snapshot = {}
+    deadline = time.time() + 240
+    while time.time() < deadline:
+        status, snapshot = api("GET", f"/api/render/{task_id}?cursor=0&wait=10")
+        if snapshot.get("status") in ("done", "error", "cancelled"):
+            break
+    check(snapshot.get("status") == "done",
+          f"多元素对比（{compare_mode}）应完成，"
+          f"实际 {snapshot.get('status')} {snapshot.get('error')}")
+    multi_compare = (snapshot.get("result") or {}).get("compare") or {}
+    check(len(multi_compare.get("files") or []) >= 1,
+          f"多元素对比（{compare_mode}）应产出图片，实际 {multi_compare}")
+    check(len(multi_compare.get("series") or []) >= 2,
+          f"多元素对比（{compare_mode}）应报告 2 个元素，实际 {multi_compare.get('series')}")
+    messages = [entry.get("message", "") for entry in snapshot.get("logs") or []]
+    check(any("对比元素：minTemp、maxTemp" in text for text in messages),
+          f"日志应报告多元素与呈现方式，实际 {messages[-6:]}")
+    for path in multi_compare.get("files") or []:
+        try:
+            Path(path).unlink()
+        except OSError:
+            pass
+
+# 全黑多城：靠线型 / 标记 / 柱填充区分城市（style_dimension=city）
+status, payload = api("POST", "/api/render", {
+    "mode": "compare", "cities": ["637", "634"], "profile": "compare",
+    "values": {**FAST,
+               "compare.colors": ["#000000"],
+               "compare.metrics": [],
+               "compare.metric": "rainfall",
+               "compare.chart_type": "bar",
+               "compare.bar_fill_cycle": ["solid", "hollow"],
+               "compare.bar_hatch_cycle": ["", ""],
+               "compare.linestyle_cycle": ["-", "--"],
+               "compare.marker_cycle": ["o", "s"],
+               "compare.style_dimension": "city",
+               "output.compare_name_template": "_apitest_black"},
+    "save_files": True,
+})
+black_id = (payload.get("task") or {}).get("id")
+snapshot = {}
+deadline = time.time() + 240
+while time.time() < deadline:
+    status, snapshot = api("GET", f"/api/render/{black_id}?cursor=0&wait=10")
+    if snapshot.get("status") in ("done", "error", "cancelled"):
+        break
+check(snapshot.get("status") == "done",
+      f"全黑多城对比应完成，实际 {snapshot.get('status')} {snapshot.get('error')}")
+black_compare = (snapshot.get("result") or {}).get("compare") or {}
+check(len(black_compare.get("files") or []) >= 1,
+      f"全黑多城对比应产出图片，实际 {black_compare}")
+for path in black_compare.get("files") or []:
     try:
         Path(path).unlink()
     except OSError:

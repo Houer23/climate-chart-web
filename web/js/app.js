@@ -311,6 +311,24 @@ function wireEvents() {
     });
   });
 
+  // 对比元素最多 4 个：勾满后禁用未选项（与配置表单里的上限一致）
+  const metricBoxes = $$("#metric-checks input");
+  const refreshMetricLimit = () => {
+    const picked = metricBoxes.filter((box) => box.checked).length;
+    metricBoxes.forEach((box) => { box.disabled = !box.checked && picked >= 4; });
+    const hint = $("#metric-hint");
+    // 未选时不占位（保持「标签 + 元素」同一行），选了才显示计数
+    if (!picked) {
+      hint.textContent = "";
+      hint.classList.add("hidden");
+      return;
+    }
+    hint.classList.remove("hidden");
+    hint.textContent = picked >= 4 ? `已选 ${picked} / 4（已满）` : `已选 ${picked} / 4`;
+  };
+  metricBoxes.forEach((box) => box.addEventListener("change", refreshMetricLimit));
+  refreshMetricLimit();
+
   // 城市输入变化时（防抖）解析出显示名，供「指定城市颜色」用
   $("#city-input").addEventListener("input", () => scheduleResolve());
   $("#city-input").addEventListener("change", () => scheduleResolve({ silent: false }));
@@ -350,11 +368,13 @@ function wireEvents() {
 
 function updateModeUi() {
   const mode = currentMode();
-  $("#grid-field").classList.toggle("hidden", mode !== "multi");
+  // 对比模式也要排版输入：多元素 facet 用它做分面布局（写入 compare.grid）
+  $("#grid-field").classList.toggle("hidden", mode !== "multi" && mode !== "compare");
   $("#metric-field").classList.toggle("hidden", mode !== "compare");
+  $("#compare-mode-field").classList.toggle("hidden", mode !== "compare");
   $("#mode-hint").textContent = {
     city: "每个城市一张统计图 + 一份表格",
-    compare: "多城市同一元素对比（至少 2 个城市）",
+    compare: "多城市对比（至少 2 个城市）；可多选元素做分面 / 叠加",
     multi: "多城市画在同一张画布（至少 2 个城市）",
   }[mode];
   $("#city-input").placeholder = mode === "multi"
@@ -964,7 +984,8 @@ async function render() {
     refresh_cache: $("#refresh-cache").checked,
     refresh_index: $("#refresh-index").checked,
     grid: $("#grid-input").value.trim(),
-    compare_metric: $("#metric-input").value,
+    compare_metrics: $$("#metric-checks input:checked").map((box) => box.value),
+    compare_mode: $("#compare-mode").value,
     compare_cities: compareCities,
     marks: state.marks.join(","),   // 快捷微调：只随本次出图下发，不回写配置
   };
