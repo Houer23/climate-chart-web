@@ -76,6 +76,8 @@ def _series(**overrides: Any) -> dict[str, Any]:
         "markevery": 1,
         # ---- 柱状专有 ----
         "bar_width": 0.55,
+        "bar_fill": "solid",         # solid 实心 | hollow 空心（仅边框）| hatch 纹理填充
+        "bar_hatch": "",             # 纹理样式（matplotlib hatch，如 "/" "//" "\\" "x" "o"）；空 = "/"
         "bar_edgecolor": "none",
         "bar_linewidth": 0.0,
         "bar_align": "center",
@@ -521,6 +523,10 @@ DEFAULTS: dict[str, Any] = {
         "markersize": 5.0,
         "alpha": 1.0,
         "bar_width": 0.8,
+        "bar_fill": "solid",                # 柱状对比时的填充方式：solid | hollow | hatch
+        "bar_hatch": "",                    # 纹理样式；空 = "/"
+        "bar_edgecolor": "none",            # 柱边框色（solid 时也可用来勾边）
+        "bar_linewidth": 0.0,               # 柱边框线宽；hollow 下留 0 会自动取 1.2
         "sort_by": "value_desc",            # none | value_desc | value_asc | name | city_id
         "show_value_range": True,           # 图例中显示该城市该元素的范围
         "label_template": "{city}",
@@ -1270,6 +1276,12 @@ def validate_config(cfg: dict[str, Any]) -> list[str]:
         raise ConfigError("compare.legend.position 只能是 inside（坐标区内）"
                           "/ bottom（横轴下方，默认）/ top（坐标区上方）"
                           f"（当前：{cmp_legend.get('position')}）")
+
+    cmp_bar_fill = str(cmpc.get("bar_fill", "solid") or "solid").lower()
+    if cmp_bar_fill not in ("solid", "hollow", "hatch"):
+        raise ConfigError("compare.bar_fill 只能是 solid（实心，默认）/ hollow（空心，仅边框）"
+                          "/ hatch（纹理填充）"
+                          f"（当前：{cmpc.get('bar_fill')}）")
 
     # 10) 请求层：DNS 预解析超时（0 表示关闭预检查）
     raw_resolve = cfg["fetch"].get("resolve_timeout", 0) or 0

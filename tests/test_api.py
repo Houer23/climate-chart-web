@@ -375,6 +375,31 @@ frames = raw.count(b"data: ")
 check(frames >= 1, f"SSE 应至少推送一帧，实际 {frames}")
 check(b'"status"' in raw or b'"type"' in raw, f"SSE 帧应含状态信息，实际 {raw[:120]!r}")
 
+# 柱填充方式（纹理）应能通过接口出图
+status, payload = api("POST", "/api/render", {
+    "mode": "city", "cities": ["237"], "profile": "default",
+    "values": {**FAST, "series.rainfall.bar_fill": "hatch",
+               "series.rainfall.bar_hatch": "///",
+               "output.name_template": "_apitest_bar_{profile}"},
+    "save_files": True,
+})
+bar_id = (payload.get("task") or {}).get("id")
+snapshot = {}
+deadline = time.time() + 240
+while time.time() < deadline:
+    status, snapshot = api("GET", f"/api/render/{bar_id}?cursor=0&wait=10")
+    if snapshot.get("status") in ("done", "error", "cancelled"):
+        break
+check(snapshot.get("status") == "done", f"纹理填充柱状图应完成，实际 {snapshot.get('status')}")
+bar_city = (snapshot.get("result") or {}).get("cities") or []
+check(bool(bar_city and bar_city[0].get("charts")),
+      f"纹理填充柱状图应产出图片，实际 {bar_city[:1]}")
+for path in (bar_city[0].get("files") if bar_city else []) or []:
+    try:
+        Path(path).unlink()
+    except OSError:
+        pass
+
 # ---- 多图与对比 ----------------------------------------------------------
 
 status, payload = api("POST", "/api/render", {

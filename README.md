@@ -3,7 +3,7 @@
 把命令行工具 `DrawClimateChart` 改造成**网页工具**：在线编辑全部绘图配置、点击即刻出图并在网页右部即时显示、
 配置可保存修改或另存（全量 / 继承差量）、支持**临时出图不落盘**。
 
-数据与绘图能力全部来自参考项目（**只读复制**到 `core/`，未做任何修改）：
+数据与绘图能力全部来自参考项目（复制到 `core/`；本仓库另有柱状填充方式等少量增强，见 §9）：
 
 * 数据源：世界天气信息服务网（WMO）`https://worldweather.wmo.int`
 * 绘图：matplotlib（无头 `Agg` 后端），8 种图形类型、双/三轴、单图 / 多图 / 对比图
@@ -192,6 +192,20 @@ I 组把 5 个元素的样式收进各自的元素小节。
 [取消] [放弃修改] [另存为…] [保存修改]
 ```
 
+### 3.4 柱状图的填充方式
+
+`chart_type=bar` 的元素（或 `compare.chart_type=bar` 的对比图）支持三种填充：
+
+| `bar_fill` | 效果 |
+|---|---|
+| `solid`（默认） | 实心，沿用元素色与透明度；可用 `bar_edgecolor` / `bar_linewidth` 勾边 |
+| `hollow` | 空心（仅边框）：边色缺省取元素色、线宽缺省 1.2，不会出现「选了空心却什么都看不见」 |
+| `hatch` | 纹理填充：`bar_hatch` 指定纹理（`/` `\` `|` `-` `+` `x` `o` `.` `*`，重复字符可加密），纹理色与边框同色 |
+
+`solid` 下填写 `bar_hatch` 可在纯色上叠加纹理；图例色块会跟着变（空心/带纹理）。
+对比图的柱子原先只有 `bar_width`，现在与单图一致地支持 `bar_fill` / `bar_hatch` /
+`bar_edgecolor` / `bar_linewidth`。
+
 ---
 
 ## 4. 项目结构
@@ -201,7 +215,7 @@ DrawClimateChartWeb/
 ├── 启动服务.bat                # ★ Windows 一键启动：查依赖 → 起服务 → 自动开网页
 ├── run.py                     # 启动入口（--host / --port / --no-browser）
 ├── requirements.txt
-├── core/                      # ★ 只读复制自参考项目 src/（未做任何修改）
+├── core/                      # 复制自参考项目 src/（柱状填充增强见 §9）
 │   ├── http_client.py         #   请求：缓存 / 超时 / DNS 兜底 / 指数退避重试 / 限速 / BOM 解码
 │   ├── parser.py  models.py   #   容错解析、平均气温派生、单位换算、坐标格式化
 │   ├── city_index.py          #   3629 城索引与名称反查
@@ -272,9 +286,9 @@ DrawClimateChartWeb/
 ## 7. 测试
 
 ```bash
-python tests/test_schema.py           # 配置 Schema：覆盖完整性 + 默认值自洽 + 类型校验严格性（590 项）
-python tests/test_config_service.py   # 配置服务：校验/模式感知/保存/另存/差量洁净度/全量剔除默认/界面状态（约 229 项，随自定义配置数变化）
-python tests/test_api.py              # 接口端到端：真实 HTTP + SSE + 出图（含多元素 facet/overlay、城市名统一）+ 不保存开关（120 项）
+python tests/test_schema.py           # 配置 Schema：覆盖完整性 + 默认值自洽 + 类型校验严格性（611 项）
+python tests/test_config_service.py   # 配置服务：校验/模式感知/保存/另存/差量洁净度/全量剔除默认/界面状态（约 232 项，随自定义配置数变化）
+python tests/test_api.py              # 接口端到端：真实 HTTP + SSE + 出图（含多元素 facet/overlay、城市名统一）+ 不保存开关（122 项）
 python tests/test_frontend.py         # 前端静态自检：括号配平 / DOM 引用 / 控件类型覆盖 / 布局约束（95 项）
 ```
 
@@ -306,3 +320,21 @@ python tests/test_frontend.py         # 前端静态自检：括号配平 / DOM 
   期间右侧日志会显示进度，不必重复点击出图。
 * `facet` 的图例列数固定为城市数（core 的实现），`compare.legend.ncol` 只在 `overlay` 生效；
   图例的字号、边框、底色、标题等样式参数在 D 组「图例」小节，三种图通用。
+
+---
+
+## 9. 与参考项目的差异
+
+`core/` 是参考项目 `src/` 的复制。目前**唯一**的本地增强是柱状填充方式：
+
+* `core/config_loader.py`：`series.*` 新增 `bar_fill` / `bar_hatch`；`compare.*` 新增
+  `bar_fill` / `bar_hatch` / `bar_edgecolor` / `bar_linewidth`；`validate_config` 增加
+  `compare.bar_fill` 校验。
+* `core/chart.py`：新增 `_bar_style()`，单图 / 对比单元素 / 对比叠加与分面三条绘制路径统一走它；
+  对比图的柱子顺带补齐了原先缺失的边框参数。
+
+其余 `core/` 文件与参考项目逐字节一致。该增强可以回灌：把这两处 diff 搬回
+`DrawClimateChart/src/`，再在本仓库重新同步即可。
+
+另外，前端图形类型里移除了 `barh`（横向柱状）：core 只在 `BAR_CHART_TYPES` 里提到它，
+并没有真正的 `barh` 绘制实现，选它只会退化成折线——移除避免误导。

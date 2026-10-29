@@ -149,6 +149,18 @@ check(rejects("series.minTemp.marker", "q"), "标记应拒绝未声明符号")
 check(accepts("series.minTemp.marker", ""), "标记应接受空字符串（不显示）")
 check(accepts("series.minTemp.marker", "."), "标记应接受小点 .（matplotlib 合法符号）")
 
+check(accepts("series.rainfall.bar_fill", "hollow")
+      and accepts("series.rainfall.bar_fill", "hatch"),
+      "柱填充方式应接受 solid / hollow / hatch")
+check(rejects("series.rainfall.bar_fill", "gradient"), "柱填充方式应拒绝未声明取值")
+check(accepts("series.rainfall.bar_hatch", "///"), "柱纹理应接受 hatch 写法")
+check(accepts("series.rainfall.bar_hatch", ""), "柱纹理应允许留空（默认 /）")
+check(accepts("compare.bar_fill", "hatch") and rejects("compare.bar_fill", "none"),
+      "对比柱填充方式应接受 solid / hollow / hatch")
+check(accepts("compare.bar_linewidth", 0.8), "对比柱边线宽应接受浮点")
+check(not any(value == "barh" for value, _label in schema.CHART_TYPE_ENUM),
+      "图形类型不应再提供未实现的 barh")
+
 check(rejects("data.lang", {"a": 1}), "文本字段应拒绝对象")
 
 # ---- 3.5 多元素对比（metrics / mode / facet / legend / element_styles） ----

@@ -47,6 +47,9 @@ METRIC_SHORT_LABELS = {
 # 图例顺序不受影响，仍按 series.order_in_legend。
 BAR_CHART_TYPES = {"bar", "barh"}
 
+#: 柱状填充方式：实心 / 空心（仅边框）/ 纹理
+BAR_FILL_MODES = ("solid", "hollow", "hatch")
+
 # 极值标注的基准偏移（点）：最高向上、最低向下；自动避让在此基准上按候选序列外推
 EXTREME_LABEL_OFFSETS = {"最高": 16.0, "最低": -22.0}
 
@@ -752,6 +755,42 @@ def _draw_grid(grid_owner, axis_map: dict[str, Any], bottom_key: str,
 
 # ---- 单个元素绘制 ------------------------------------------------------
 
+def _bar_style(scfg: dict[str, Any], color: str) -> dict[str, Any]:
+    """柱状的填充方式 → ``ax.bar`` 的 facecolor / edgecolor / linewidth / hatch。
+
+    * ``solid``：实心，沿用系列色与透明度；边框按 ``bar_edgecolor`` / ``bar_linewidth``
+      （给了 ``bar_hatch`` 时在实心上叠加纹理，纹理色取边框色）；
+    * ``hollow``：空心只画边框；边框色未指定时退回系列色，线宽未指定时取 1.2，
+      避免"选了空心却什么都看不见"；
+    * ``hatch``：纹理填充；``bar_hatch`` 为空时用 ``/``，纹理色与边框同色。
+
+    未知取值按 ``solid`` 处理，保证旧配置与手写配置不会因为拼写问题画不出柱子。
+    """
+    mode = str(scfg.get("bar_fill", "solid") or "solid").lower()
+    if mode not in BAR_FILL_MODES:
+        mode = "solid"
+    edge = str(scfg.get("bar_edgecolor", "none") or "none").strip()
+    has_edge = edge.lower() not in ("", "none")
+    linewidth = float(scfg.get("bar_linewidth", 0.0) or 0.0)
+    hatch = str(scfg.get("bar_hatch", "") or "")
+
+    style: dict[str, Any] = {"facecolor": color}
+    if mode == "hollow":
+        style["facecolor"] = "none"
+        style["edgecolor"] = edge if has_edge else color
+        style["linewidth"] = linewidth if linewidth > 0 else 1.2
+    elif mode == "hatch":
+        style["hatch"] = hatch or "/"
+        style["edgecolor"] = edge if has_edge else color
+        style["linewidth"] = linewidth
+    else:
+        style["edgecolor"] = edge
+        style["linewidth"] = linewidth
+        if hatch:
+            style["hatch"] = hatch
+    return style
+
+
 def _plot_one(ax, key: str, scfg: dict[str, Any], x: np.ndarray, y: np.ndarray,
               color: str) -> Optional[Line2D]:
     chart_type = str(scfg.get("chart_type", "line")).lower()
@@ -770,11 +809,10 @@ def _plot_one(ax, key: str, scfg: dict[str, Any], x: np.ndarray, y: np.ndarray,
     if chart_type == "bar":
         width = float(scfg.get("bar_width", 0.55))
         bars = ax.bar(
-            x, np.nan_to_num(y, nan=0.0), width=width, color=color, alpha=alpha,
-            edgecolor=str(scfg.get("bar_edgecolor", "none")),
-            linewidth=float(scfg.get("bar_linewidth", 0.0)),
+            x, np.nan_to_num(y, nan=0.0), width=width, alpha=alpha,
             align=str(scfg.get("bar_align", "center")),
             zorder=zorder, label=label,
+            **_bar_style(scfg, color),
         )
         return bars
 
@@ -1543,8 +1581,8 @@ def _render_compare_single(cities: list[CityClimate], cfg: dict[str, Any],
             width = float(cmpc.get("bar_width", 0.8)) / max(total, 1)
             offset = (i - (total - 1) / 2.0) * width
             handle = ax.bar(x + offset, np.nan_to_num(values, nan=0.0), width=width,
-                            color=color, alpha=float(cmpc.get("alpha", 1.0)),
-                            label=label, zorder=3)
+                            alpha=float(cmpc.get("alpha", 1.0)),
+                            label=label, zorder=3, **_bar_style(cmpc, color))
         elif chart_type in ("smooth", "spline"):
             xs, ys = _hermite_smooth(x, values, 240)
             handle, = ax.plot(xs, ys, color=color, alpha=float(cmpc.get("alpha", 1.0)),
@@ -1728,11 +1766,13 @@ def _compare_label(cmpc: dict[str, Any], cfg: dict[str, Any], city: CityClimate,
 def _plot_compare_series(ax, x: np.ndarray, values: np.ndarray, *, chart_type: str,
                          color: str, linestyle: str, marker: str, alpha: float,
                          linewidth: float, markersize: float, bar_width: float,
-                         offset: float, label: str) -> Any:
+                         offset: float, label: str,
+                         bar_style: Optional[dict[str, Any]] = None) -> Any:
     """按图形类型画一条「城市 × 元素」序列，返回图例句柄。"""
     if chart_type in BAR_CHART_TYPES:
         return ax.bar(x + offset, np.nan_to_num(values, nan=0.0), width=bar_width,
-                      color=color, alpha=alpha, label=label, zorder=3)
+                      alpha=alpha, label=label, zorder=3,
+                      **dict(bar_style or {"facecolor": color}))
     if chart_type in ("smooth", "spline"):
         xs, ys = _hermite_smooth(x, values, 240)
         handle, = ax.plot(xs, ys, color=color, alpha=alpha, linewidth=linewidth,
@@ -1997,7 +2037,8 @@ def _render_compare_overlay(cities: list[CityClimate], cfg: dict[str, Any],
             target, x, item["values"], chart_type=item["style"]["chart_type"],
             color=item["color"], linestyle=item["style"]["linestyle"],
             marker=item["style"]["marker"], alpha=alpha, linewidth=linewidth,
-            markersize=markersize, bar_width=width, offset=offset, label=label)
+            markersize=markersize, bar_width=width, offset=offset, label=label,
+            bar_style=_bar_style(cmpc, item["color"]))
         _draw_data_labels(target, label_cfg, x, item["values"], item["color"])
 
     axis_defaults = {"primary": (-0.075, "axes_primary"),
@@ -2120,7 +2161,8 @@ def _draw_compare_metric_panel(ax, cities: list[CityClimate], cfg: dict[str, Any
             ax, x, values, chart_type=chart_type, color=colors[index],
             linestyle=linestyles[index % len(linestyles)], marker=markers[index % len(markers)],
             alpha=alpha, linewidth=linewidth, markersize=markersize,
-            bar_width=width, offset=offset, label=label))
+            bar_width=width, offset=offset, label=label,
+            bar_style=_bar_style(cmpc, colors[index])))
         _draw_data_labels(ax, label_cfg, x, values, colors[index])
 
     axis_key = _metric_axis_key(metric)
