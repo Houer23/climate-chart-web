@@ -213,7 +213,12 @@ body.splitting { cursor: col-resize; user-select: none; }
 .chip:has(input:checked) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 
 .target-input { padding: 10px 12px 0; }
-.target-actions { display: flex; gap: 8px; margin-top: 6px; }
+/* 反查/查询按钮与「忽略缓存 / 强制刷新索引」两个勾选同一行，放不下整体换行 */
+.target-actions {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px;
+}
+.target-actions .sep { width: 1px; height: 18px; background: var(--border); margin: 0 2px; }
+.target-actions .field.checkbox { flex: 0 0 auto; }
 /* 模式附加项：按内容排布（flex 换行），不再用 auto-fit 网格——
    网格会把每个格子拉到等宽，短标签旁边出现大块空白，长标签又会挤成两行。 */
 .inline-fields {
@@ -225,10 +230,14 @@ body.splitting { cursor: col-resize; user-select: none; }
 .inline-fields > .field.checkbox { flex: 0 0 auto; margin-top: 2px; }
 #grid-field { flex: 0 0 168px; }
 #compare-mode-field { flex: 0 0 208px; }
-/* 对比元素是一组复选，独占一整行并排在最前，避免挤在半个格子里换三行；
-   这样「排列 + 多元素呈现」才能并排落在同一行，不留半行空白。 */
-#metric-field { flex: 1 1 100%; order: -1; }
-#metric-field .checkbox-grid { gap: 5px 14px; }
+/* 对比元素：标签在左、各元素紧随其后；一行放不下时整组换到下一行，再在组内换行 */
+#metric-field {
+  flex: 1 1 100%; order: -1;
+  flex-direction: row; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+#metric-field > .label { flex: 0 0 auto; }
+#metric-checks { flex: 0 1 auto; gap: 5px 14px; }
+#metric-hint { flex: 0 0 auto; align-self: center; }
 .resolved { padding: 0 12px 12px; min-height: 18px; }
 
 /* ---------------- 配置表单 ---------------- */

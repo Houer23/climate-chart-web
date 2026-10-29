@@ -312,11 +312,15 @@ function wireEvents() {
   const refreshMetricLimit = () => {
     const picked = metricBoxes.filter((box) => box.checked).length;
     metricBoxes.forEach((box) => { box.disabled = !box.checked && picked >= 4; });
-    $("#metric-hint").textContent = picked >= 4
-      ? "最多 4 个（已选满）"
-      : picked
-        ? `已选 ${picked} 个；都不勾 = 用配置里的取值`
-        : "都不勾 = 用配置里的取值";
+    const hint = $("#metric-hint");
+    // 未选时不占位（保持「标签 + 元素」同一行），选了才显示计数
+    if (!picked) {
+      hint.textContent = "";
+      hint.classList.add("hidden");
+      return;
+    }
+    hint.classList.remove("hidden");
+    hint.textContent = picked >= 4 ? `已选 ${picked} / 4（已满）` : `已选 ${picked} / 4`;
   };
   metricBoxes.forEach((box) => box.addEventListener("change", refreshMetricLimit));
   refreshMetricLimit();

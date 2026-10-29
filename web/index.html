@@ -55,6 +55,15 @@
         <div class="target-actions">
           <button id="btn-resolve" class="ghost small">反查编号</button>
           <button id="btn-search-city" class="ghost small">查询城市</button>
+          <span class="sep" aria-hidden="true"></span>
+          <label class="field checkbox">
+            <input type="checkbox" id="refresh-cache">
+            <span>忽略缓存，强制重新请求</span>
+          </label>
+          <label class="field checkbox">
+            <input type="checkbox" id="refresh-index">
+            <span>强制刷新城市索引</span>
+          </label>
         </div>
       </div>
       <div class="inline-fields" id="mode-extra">
@@ -69,7 +78,7 @@
           </datalist>
         </label>
         <div class="field hidden" id="metric-field">
-          <span class="label">对比元素（最多 4 个）</span>
+          <span class="label" title="最多可勾 4 个元素；都不勾 = 用配置里的取值">对比元素</span>
           <div class="checkbox-grid" id="metric-checks">
             <label><input type="checkbox" value="minTemp"><span>日均最低气温</span></label>
             <label><input type="checkbox" value="maxTemp"><span>日均最高气温</span></label>
@@ -77,7 +86,7 @@
             <label><input type="checkbox" value="rainfall"><span>降水量</span></label>
             <label><input type="checkbox" value="raindays"><span>降水日数</span></label>
           </div>
-          <span class="muted small" id="metric-hint">都不勾 = 用配置里的取值</span>
+          <span class="muted small hidden" id="metric-hint"></span>
         </div>
         <label class="field hidden" id="compare-mode-field">
           <span class="label">多元素呈现</span>
@@ -86,14 +95,6 @@
             <option value="facet">分面：一格一元素</option>
             <option value="overlay">叠加：同一张图</option>
           </select>
-        </label>
-        <label class="field checkbox">
-          <input type="checkbox" id="refresh-cache">
-          <span>忽略缓存，强制重新请求</span>
-        </label>
-        <label class="field checkbox">
-          <input type="checkbox" id="refresh-index">
-          <span>强制刷新城市索引</span>
         </label>
       </div>
       <div id="city-resolved" class="resolved small"></div>

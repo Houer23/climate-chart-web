@@ -207,7 +207,7 @@ check("metric-input" not in app_code + html,
       "旧的单选 compare_metric 控件应已移除")
 check(app_code.count("metric-checks") >= 2,
       "app.js 应读取并约束 #metric-checks 的勾选数量")
-check("picked >= 4" in app_code and "已选满" in app_code,
+check("picked >= 4" in app_code and "box.disabled" in app_code,
       "app.js 应在勾满 4 个后禁用其余选项")
 
 check(form_code.count('case "enum_or_null"') >= 2,
