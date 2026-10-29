@@ -168,7 +168,7 @@ r3h / hr3               连写等价于 r3,h（标记之间可省略逗号）
 
 ### 3.3 按数据类型的输入验证
 
-`app/schema.py` 为全部 520 个配置项声明了**类型 / 枚举 / 范围 / 说明 / 分组**，前端据此渲染控件并即时校验，
+`app/schema.py` 为全部 540 个配置项声明了**类型 / 枚举 / 范围 / 说明 / 分组**，前端据此渲染控件并即时校验，
 后端用同一份规则做权威校验（绕过前端也进不了渲染流程）。分组内部还可再分二级小节：
 D 组把 `figure.legend.*` 的 **14 项图例参数**收进「图例（单图 / 对比图 / 多图通用）」小节，
 I 组把 5 个元素的样式收进各自的元素小节。
@@ -271,6 +271,23 @@ series:
 
 底色与纹理色要有对比，否则纹理会被底色吃掉。
 
+**数值标签可按元素单独控制**：`compare.data_labels.*` 是全局默认，
+`compare.element_styles.<元素>.data_labels.*`（`show` / `fontsize` / `format` / `offset`）为元素级覆盖，
+**元素级优先**、留空即跟随全局。例如只给降水显示标签：
+
+```yaml
+compare:
+  metrics: [minTemp, rainfall]
+  mode: facet
+  data_labels:
+    show: false            # 全局默认：不显示
+  element_styles:
+    rainfall:
+      data_labels:
+        show: true         # 单独打开
+        format: "{:.0f}"   # 降水取整
+```
+
 **数据点标记的填充 / 轮廓**：单图用 `series.<元素>.markerfacecolor` / `markeredgecolor` /
 `markeredgewidth`（`auto` = 跟随元素配色），对比图用同名的 `compare.markerfacecolor` /
 `markeredgecolor` / `markeredgewidth`，并可按城市轮换（`markerfacecolor_cycle` /
@@ -364,8 +381,8 @@ DrawClimateChartWeb/
 ## 7. 测试
 
 ```bash
-python tests/test_schema.py           # 配置 Schema：覆盖完整性 + 默认值自洽 + 类型校验严格性（642 项）
-python tests/test_config_service.py   # 配置服务：校验/模式感知/保存/另存/差量洁净度/全量剔除默认/界面状态（约 257 项，随自定义配置数变化）
+python tests/test_schema.py           # 配置 Schema：覆盖完整性 + 默认值自洽 + 类型校验严格性（670 项）
+python tests/test_config_service.py   # 配置服务：校验/模式感知/保存/另存/差量洁净度/全量剔除默认/界面状态（约 260 项，随自定义配置数变化）
 python tests/test_api.py              # 接口端到端：真实 HTTP + SSE + 出图（含多元素 facet/overlay、城市名统一、全黑多城）+ 分层校验（138 项）
 python tests/test_frontend.py         # 前端静态自检：括号配平 / DOM 引用 / 控件类型覆盖 / 布局约束（103 项）
 ```
@@ -411,12 +428,15 @@ python tests/test_frontend.py         # 前端静态自检：括号配平 / DOM 
     `bar_fill_cycle` / `bar_hatch_cycle` / `bar_fill_color_cycle`（按城市轮换），
     `markerfacecolor` / `markeredgecolor` / `markeredgewidth`
     （+ `markerfacecolor_cycle` / `markeredgecolor_cycle`，按城市轮换），
+    `element_styles.<元素>.data_labels`（元素级数值标签，元素级优先），
     `style_dimension`（city / metric / hybrid）；
   * `validate_config`：新增上述枚举与数组校验。
 * `core/chart.py`
   * `_bar_style()`：新增索引参数，支持按城市轮换填充/纹理/底色；`hatch` 默认不填底色
     （同色也清晰），给了 `bar_fill_color` 才铺底色；
   * `_marker_style()`：对比图新增标记填充/轮廓控制（`auto` = 跟随城市色），三条对比路径统一使用；
+  * `_compare_data_labels()`：数值标签「全局 + 元素级覆盖」合并（元素优先），
+    单元素 / 叠加 / 分面三处不再共用同一份全局配置；
   * `_plot_one()`：`step` / `area` / `fill_between` 补上标记参数（原先配了标记也不画），
     `scatter` 改按 `markerfacecolor` / `markeredgecolor` / `markeredgewidth` 上色；
     平滑曲线的图例句柄补上标记（原先图例只有一条光秃秃的线）；

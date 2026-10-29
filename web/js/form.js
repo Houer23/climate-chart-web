@@ -47,6 +47,10 @@ function validateField(field, value) {
   switch (kind) {
     case "bool":
       return typeof value === "boolean" ? null : `需要布尔值 true/false`;
+    case "bool_or_null":
+      // null = 跟随上层（全局）设置
+      if (value === null || value === undefined) return null;
+      return typeof value === "boolean" ? null : "需要 true / false，或留空表示跟随";
     case "int": {
       if (!isNumber(value)) return "需要整数";
       if (!Number.isInteger(value)) return "需要整数（不能带小数）";
@@ -532,6 +536,20 @@ class ConfigForm {
         control.node = h("label", { class: "field checkbox" }, [box, h("span", { text: "启用 / 是" })]);
         control.read = () => box.checked;
         control.write = (value) => { box.checked = Boolean(value); };
+        break;
+      }
+
+      case "bool_or_null": {
+        // 三态：跟随上层（null）/ 开 / 关
+        const select = h("select", { onchange: commit });
+        select.appendChild(h("option", { value: "", text: field.nullLabel || "跟随上层设置" }));
+        select.appendChild(h("option", { value: "true", text: "开（true）" }));
+        select.appendChild(h("option", { value: "false", text: "关（false）" }));
+        control.node = h("div", { class: "control-line" }, [select]);
+        control.read = () => (select.value === "" ? null : select.value === "true");
+        control.write = (value) => {
+          select.value = value === null || value === undefined ? "" : String(Boolean(value));
+        };
         break;
       }
 

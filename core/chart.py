@@ -1660,7 +1660,7 @@ def _render_compare_single(cities: list[CityClimate], cfg: dict[str, Any],
                               label=label, zorder=3, **marker_style)
         handles.append(handle)
 
-        dl = cmpc.get("data_labels") or {}
+        dl = _compare_data_labels(cmpc, metric)["data_labels"]
         if dl.get("show"):
             for xi, yi in zip(x, values):
                 if not np.isfinite(yi):
@@ -1995,6 +1995,26 @@ def _compare_sort_metric(cmpc: dict[str, Any], metrics: list[str]) -> str:
     return key if key in metrics else metrics[0]
 
 
+def _compare_data_labels(cmpc: dict[str, Any], metric: str) -> dict[str, Any]:
+    """对比图的数值标签配置：全局 ``compare.data_labels`` + 该元素的覆盖（**元素级优先**）。
+
+    元素级覆盖写在 ``compare.element_styles.<元素>.data_labels``：
+    ``show`` / ``fontsize`` / ``offset`` 为 ``None``、``format`` 为空串时表示「跟随全局」。
+    """
+    base = dict(cmpc.get("data_labels") or {})
+    element = (cmpc.get("element_styles") or {}).get(metric) or {}
+    override = element.get("data_labels") or {}
+    if override.get("show") is not None:
+        base["show"] = bool(override["show"])
+    if override.get("fontsize") not in (None, ""):
+        base["fontsize"] = float(override["fontsize"])
+    if str(override.get("format") or "").strip():
+        base["format"] = str(override["format"])
+    if override.get("offset") not in (None, ""):
+        base["offset"] = float(override["offset"])
+    return {"data_labels": base}
+
+
 def _compare_metric_style(cmpc: dict[str, Any], metric: str, index: int,
                           city_index: Optional[int] = None) -> dict[str, str]:
     """多城市对比里「城市 × 元素」一条序列的样式。
@@ -2116,7 +2136,6 @@ def _render_compare_overlay(cities: list[CityClimate], cfg: dict[str, Any],
     bottom_key = _stack_axes(cfg, axis_map, by_axis)   # 折线轴在上、柱状轴在下（含底色归属）
 
     handles: list[Any] = [None] * len(items)
-    label_cfg = {"data_labels": cmpc.get("data_labels")}
     for item in sorted(items,
                        key=lambda it: 0 if it["style"]["chart_type"] in BAR_CHART_TYPES else 1):
         target = axis_map.get(item["axis"])
@@ -2141,7 +2160,9 @@ def _render_compare_overlay(cities: list[CityClimate], cfg: dict[str, Any],
             markersize=markersize, bar_width=width, offset=offset, label=label,
             bar_style=_bar_style(cmpc, item["color"], item["bar_index"]),
             marker_style=_marker_style(cmpc, item["color"], item["city_index"]))
-        _draw_data_labels(target, label_cfg, x, item["values"], item["color"])
+        # 每条序列按自己的元素取标签配置（元素级可单独开关 / 调格式）
+        _draw_data_labels(target, _compare_data_labels(cmpc, item["metric"]),
+                          x, item["values"], item["color"])
 
     axis_defaults = {"primary": (-0.075, "axes_primary"),
                      "secondary": (1.075, "axes_secondary"),
@@ -2253,7 +2274,7 @@ def _draw_compare_metric_panel(ax, cities: list[CityClimate], cfg: dict[str, Any
     if dimension not in STYLE_DIMENSIONS:
         dimension = "city"
     bar_by_city = dimension in ("city", "hybrid")
-    label_cfg = {"data_labels": cmpc.get("data_labels")}
+    label_cfg = _compare_data_labels(cmpc, metric)
     x = _configure_x_axis(ax, cities[0], cfg)
     total = max(len(cities), 1)
     width = bar_width / total

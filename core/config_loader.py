@@ -141,6 +141,11 @@ COMPARE_METRIC_KEYS: tuple[str, ...] = ("minTemp", "maxTemp", "meanTemp", "rainf
 #: 一次最多对比的元素个数（再多格子/线条就看不清了）
 COMPARE_METRICS_MAX = 4
 
+#: 元素级数值标签的默认值：None / 空串 = 跟随 compare.data_labels（全局）
+ELEMENT_LABEL_DEFAULTS: dict[str, Any] = {
+    "show": None, "fontsize": None, "format": "", "offset": None,
+}
+
 
 DEFAULTS: dict[str, Any] = {
     "profile_name": "default",
@@ -545,11 +550,16 @@ DEFAULTS: dict[str, Any] = {
         # 多元素叠加时按元素区分的样式（overlay 用）。chart_type 留空 = 跟随 compare.chart_type，
         # 跟随状态下默认让降水类画柱、气温类画线（更接近气候图习惯）
         "element_styles": {
-            "minTemp": {"chart_type": None, "linestyle": "-", "marker": "o"},
-            "maxTemp": {"chart_type": None, "linestyle": "--", "marker": "s"},
-            "meanTemp": {"chart_type": None, "linestyle": "-.", "marker": "^"},
-            "rainfall": {"chart_type": None, "linestyle": "-", "marker": "v"},
-            "raindays": {"chart_type": None, "linestyle": ":", "marker": "D"},
+            "minTemp": {"chart_type": None, "linestyle": "-", "marker": "o",
+                        "data_labels": dict(ELEMENT_LABEL_DEFAULTS)},
+            "maxTemp": {"chart_type": None, "linestyle": "--", "marker": "s",
+                        "data_labels": dict(ELEMENT_LABEL_DEFAULTS)},
+            "meanTemp": {"chart_type": None, "linestyle": "-.", "marker": "^",
+                         "data_labels": dict(ELEMENT_LABEL_DEFAULTS)},
+            "rainfall": {"chart_type": None, "linestyle": "-", "marker": "v",
+                         "data_labels": dict(ELEMENT_LABEL_DEFAULTS)},
+            "raindays": {"chart_type": None, "linestyle": ":", "marker": "D",
+                         "data_labels": dict(ELEMENT_LABEL_DEFAULTS)},
         },
         # 多元素图例：排列方式与位置
         "legend": {

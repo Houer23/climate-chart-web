@@ -347,7 +347,8 @@ profiles:
 | `hspace` / `wspace` | float | `null` | `facet` 子图间距；`null` = 0.34 / 0.22 |
 | `sort_metric` | str | `""` | 多元素排序基准；空 = 用第一个元素（保证各格城市顺序一致） |
 | `chart_type` | str | `"smooth"` | 对比图形类型（`rainfall` 时常配 `bar`）；多元素时作为 `element_styles` 的兜底 |
-| `element_styles` | obj | 见下 | `overlay` 下按元素区分样式：`{元素: {chart_type, linestyle, marker}}`；`chart_type: null` = 跟随 `compare.chart_type`（仍是默认 `smooth` 时降水类画柱） |
+| `element_styles` | obj | 见下 | 按元素区分样式：`{元素: {chart_type, linestyle, marker, data_labels}}`；`chart_type: null` = 跟随 `compare.chart_type`（仍是默认 `smooth` 时降水类画柱） |
+| `element_styles.<元素>.data_labels` | obj | `{show: null, fontsize: null, format: "", offset: null}` | **元素级数值标签**，留空 = 跟随 `compare.data_labels`；元素级优先（全局关也能单独打开） |
 | `legend.layout` | str | `"city"` | 图例排列：`city` 同城一行 / `metric` 同要素一行 / `auto` 自然顺序 |
 | `legend.position` | str | `"bottom"` | `inside` 坐标区内 / `bottom` 横轴下方 / `top` 标题下方（整图居中） |
 | `legend.gap` | float | `0.10` | 图例与横轴的距离（`inside` 时为坐标区内的相对位置；坐标区高度比例） |

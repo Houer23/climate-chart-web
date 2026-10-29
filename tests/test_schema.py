@@ -173,6 +173,27 @@ check(accepts("compare.markeredgewidth", 0) and accepts("compare.markeredgewidth
 check(accepts("compare.markerfacecolor_cycle", ["auto", "#ffffff"]),
       "按城市标记填充应接受数组（auto 表示跟随城市色）")
 check(accepts("compare.markeredgecolor_cycle", []), "按城市标记轮廓应允许空数组")
+
+# ---- 3.6 元素级数值标签（bool_or_null 三态 + 覆盖全局） ----
+check(accepts("compare.element_styles.rainfall.data_labels.show", None),
+      "元素级标签开关应接受 null（跟随全局）")
+check(accepts("compare.element_styles.rainfall.data_labels.show", True)
+      and accepts("compare.element_styles.rainfall.data_labels.show", False),
+      "元素级标签开关应接受 true / false")
+check(schema.normalize_value(field_of("compare.element_styles.rainfall.data_labels.show"), "")
+      is None, "空串应归一为 null（跟随全局）")
+check(schema.empty_value(field_of("compare.element_styles.rainfall.data_labels.show")) is None,
+      "bool_or_null 的空值应为 null")
+check(rejects("compare.element_styles.rainfall.data_labels.show", "yes"),
+      "元素级标签开关应拒绝非布尔文本")
+check(accepts("compare.element_styles.rainfall.data_labels.fontsize", None)
+      and accepts("compare.element_styles.rainfall.data_labels.fontsize", 9.5),
+      "元素级标签字号应接受 null 与数字")
+check(accepts("compare.element_styles.rainfall.data_labels.format", "")
+      and accepts("compare.element_styles.rainfall.data_labels.format", "{:.0f}"),
+      "元素级标签格式应接受空串（跟随）与模板")
+check(accepts("compare.element_styles.rainfall.data_labels.offset", 6),
+      "元素级标签偏移应接受数字")
 check(accepts("compare.bar_fill", "hatch") and rejects("compare.bar_fill", "none"),
       "对比柱填充方式应接受 solid / hollow / hatch")
 check(accepts("compare.bar_linewidth", 0.8), "对比柱边线宽应接受浮点")

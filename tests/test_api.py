@@ -546,6 +546,10 @@ for compare_mode in ("facet", "overlay"):
                    "compare.metrics": ["minTemp", "maxTemp"],
                    "compare.grid": "1x2",
                    "compare.mode": compare_mode,
+                   # 数值标签：全局关、元素级单独打开（验证元素级优先）
+                   "compare.data_labels.show": False,
+                   "compare.element_styles.minTemp.data_labels.show": True,
+                   "compare.element_styles.minTemp.data_labels.format": "{:.2f}",
                    "output.compare_name_template": f"_apitest_compare_{compare_mode}"},
         "save_files": True,
     })

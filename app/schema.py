@@ -763,6 +763,24 @@ def _element_style_fields() -> tuple[Field, ...]:
             f"compare.element_styles.{key}.marker", "enum", "标记",
             enum=MARKER_ENUM, subgroup=key,
         ))
+        # 数值标签的元素级覆盖（留空 = 跟随 compare.data_labels）
+        result.append(_f(
+            f"compare.element_styles.{key}.data_labels.show", "bool_or_null", "显示数值标签",
+            "留空 = 跟随全局；元素级设置优先（全局关也能单独打开）。",
+            subgroup=key, null_label="跟随全局",
+        ))
+        result.append(_f(
+            f"compare.element_styles.{key}.data_labels.fontsize", "num_or_null", "数值标签字号",
+            "留空 = 跟随全局字号。", subgroup=key,
+        ))
+        result.append(_f(
+            f"compare.element_styles.{key}.data_labels.format", "str", "数值标签格式",
+            "留空 = 跟随全局；如 {:.1f}。", subgroup=key,
+        ))
+        result.append(_f(
+            f"compare.element_styles.{key}.data_labels.offset", "num_or_null", "数值标签偏移",
+            "留空 = 跟随全局偏移。", subgroup=key,
+        ))
     return tuple(result)
 
 
@@ -1247,6 +1265,8 @@ def empty_value(field: Field) -> Any:
         return []
     if kind == "bool":
         return False
+    if kind == "bool_or_null":
+        return None
     if kind == "num2":
         return [] if field.allow_empty else None
     if kind in ("int", "float", "int_or_null", "num_or_null", "num2_or_null"):
@@ -1387,6 +1407,16 @@ def normalize_value(f: Field, raw: Any) -> Any:
     但即使绕过前端，非法值也进不了渲染流程。
     """
     kind = f.kind
+
+    if kind == "bool_or_null":
+        # 三态：null / 空串 = 跟随上层（全局）设置
+        if raw is None or (isinstance(raw, str) and raw.strip() == ""):
+            return None
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, str) and raw.strip().lower() in ("true", "false"):
+            return raw.strip().lower() == "true"
+        raise FieldError(f.path, f"需要 true / false，或留空表示跟随（收到 {raw!r}）")
 
     if kind == "bool":
         if isinstance(raw, bool):
