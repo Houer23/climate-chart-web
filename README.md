@@ -267,9 +267,9 @@ DrawClimateChartWeb/
 
 ```bash
 python tests/test_schema.py           # 配置 Schema：覆盖完整性 + 默认值自洽 + 类型校验严格性（590 项）
-python tests/test_config_service.py   # 配置服务：校验/模式感知/保存/另存/差量洁净度/全量剔除默认/界面状态（226 项）
+python tests/test_config_service.py   # 配置服务：校验/模式感知/保存/另存/差量洁净度/全量剔除默认/界面状态（约 229 项，随自定义配置数变化）
 python tests/test_api.py              # 接口端到端：真实 HTTP + SSE + 出图（含多元素 facet/overlay）+ 不保存开关（115 项）
-python tests/test_frontend.py         # 前端静态自检：括号配平 / DOM 引用 / 页签 / 分栏约束（90 项）
+python tests/test_frontend.py         # 前端静态自检：括号配平 / DOM 引用 / 控件类型覆盖 / 布局约束（95 项）
 ```
 
 `test_api.py` 需要联网取一次气候数据（命中缓存则不联网）；其余三个完全离线。

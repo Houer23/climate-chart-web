@@ -539,7 +539,8 @@ class ConfigForm {
         const first = numberInput("any");
         const second = numberInput("any");
         const line = h("div", { class: "control-line" }, [
-          first, second,
+          // 两个数字框作为一组：始终并排、等比收缩，空间不够时让提示文字换行
+          h("div", { class: "num-pair" }, [first, second]),
           h("span", { class: "muted small",
             text: kind === "num2_or_null" ? "两项都留空 = 自动" : "如 [12, 6]" }),
         ]);
@@ -633,11 +634,15 @@ class ConfigForm {
       case "str":
       case "path": {
         const listId = `dl-${field.path.replace(/\./g, "-")}`;
-        const input = textInput({ list: (field.suggestions || []).length ? listId : null });
+        // 角度字段的候选是 textOptions（vertical / horizontal），其余用 suggestions
+        const candidates = kind === "rotation"
+          ? (field.textOptions || [])
+          : (field.suggestions || []);
+        const input = textInput({ list: candidates.length ? listId : null });
         control.node = h("div", { class: "control-line" }, [input]);
-        if ((field.suggestions || []).length) {
+        if (candidates.length) {
           const datalist = h("datalist", { id: listId });
-          field.suggestions.forEach((item) => datalist.appendChild(h("option", { value: item })));
+          candidates.forEach((item) => datalist.appendChild(h("option", { value: item })));
           control.node.appendChild(datalist);
         }
         if (kind === "grid") input.placeholder = "auto / 2x2 / 3x2";

@@ -217,6 +217,26 @@ check("mainRows" in form_code,
       "二级子分组下的主区字段应参与过滤（applyFilters 需覆盖 mainRows）")
 check("field.subgroup" in form_code, "form.js 应按 field.subgroup 归组")
 
+# ---- 6. 控件类型覆盖 + 多值控件布局 --------------------------------------
+# 每一项配置都必须有与之匹配的输入控件；漏一种 kind 就会退化成纯文本框。
+
+sys.path.insert(0, str(ROOT))
+from app import schema as cfg_schema  # noqa: E402 - 纯 Python，无第三方依赖
+
+schema_kinds = {field.kind for field in cfg_schema.all_fields()}
+handled_kinds = set(re.findall(r'case "([a-z0-9_]+)"', form_code))
+missing_kinds = sorted(schema_kinds - handled_kinds)
+check(not missing_kinds,
+      f"以下配置类型在前端没有对应控件（会退化为纯文本输入）：{missing_kinds}")
+
+check(re.search(r"\.control-line\s*\{[^}]*flex-wrap:\s*wrap", css_code) is not None,
+      "多控件行 .control-line 必须允许换行，否则窄栏下第二个输入框会被裁掉")
+check(re.search(r"\.num-pair\s*\{[^}]*min-width", css_code) is not None,
+      "成对数字框应有 .num-pair（量程/画布尺寸并排且可收缩）")
+check('"num-pair"' in form_code, "num2 控件应把两个数字框包进 .num-pair")
+check("textOptions" in form_code and "candidates" in form_code,
+      "角度字段应把 textOptions（vertical / horizontal）作为候选给出")
+
 # ---- 5. 「上次使用的配置」关键逻辑存在性 ---------------------------------
 
 check('"/api/state"' in app_code, "app.js 应通过 /api/state 记住并恢复上次使用的配置")

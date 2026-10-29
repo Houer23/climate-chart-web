@@ -265,9 +265,14 @@ body.splitting { cursor: col-resize; user-select: none; }
 .frow .factions button { padding: 2px 7px; font-size: 11px; }
 .null-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); white-space: nowrap; }
 
-.control-line { display: flex; gap: 6px; align-items: center; }
-.numbox { width: 88px; flex: 0 0 auto; }
-.control-line input[type="text"] { flex: 1 1 auto; }
+/* 一行里可能并排多个控件（如量程 / 画布尺寸的两个数字框）：允许换行、允许收缩，
+   否则左栏一窄，第二个输入框会被挤出可视区（表现为「只能填一个数字」）。 */
+.control-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+.numbox { width: 88px; min-width: 60px; flex: 0 1 auto; }
+.control-line input[type="text"] { flex: 1 1 auto; min-width: 0; }
+/* 成对的数字框（量程、画布尺寸…）：并排、可等比收缩，最小 56px 仍能输入 -120 */
+.num-pair { display: flex; gap: 6px; min-width: 0; flex: 0 1 auto; }
+.num-pair .numbox { width: auto; flex: 1 1 0; min-width: 56px; }
 .tag-input { font-family: var(--mono); font-size: 12.5px; }
 .kv-table { display: flex; flex-direction: column; gap: 5px; }
 .kv-row { display: flex; gap: 6px; align-items: center; }
