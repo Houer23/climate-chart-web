@@ -19,7 +19,7 @@ import yaml  # noqa: E402
 
 from app import config_service as cs  # noqa: E402
 from app import state_store  # noqa: E402
-from core.config_loader import load_config  # noqa: E402
+from core.config_loader import apply_marks, load_config, split_marks  # noqa: E402
 
 FULL_NAME = "__webtest_full"
 DIFF_NAME = "__webtest_diff"
@@ -472,6 +472,65 @@ shadow = {item.name: item for item in cs.scan_profiles()}["compact"]
 check(shadow.builtin and shadow.shadowed, "同名配置在清单中应标记为「内置 + 被覆盖」")
 check("config/custom/compact.yaml" in shadow.source,
       f"同名配置的来源应指向自定义文件，实际 {shadow.source}")
+
+# ---- 5.5 快捷微调（--mark）的切分与连写 -----------------------------------
+# 曾经「r3h」只生效 r3、h 被静默丢弃；「hr3」整串无法识别（一个 token 只解析一个标记）。
+
+SPLIT_CASES = {
+    "r3h": ["r3", "h"],
+    "hr3": ["h", "r3"],
+    "hhr3": ["hh", "r3"],
+    "hh r3": ["hh", "r3"],
+    "tt18t14": ["tt18", "t14"],
+    "ts5rs50": ["ts5", "rs50"],
+    "cyh": ["cy", "h"],
+    "h,r3": ["h", "r3"],
+    "r12": ["r12"],
+    "r3.5": ["r3.5"],
+    "cn": ["cn"],
+}
+for text, expected in SPLIT_CASES.items():
+    got = split_marks([text])
+    check(got == expected, f"「{text}」应切成 {expected}，实际 {got}")
+
+check(split_marks(["hello"]) == ["h", "ello"],
+      f"无法识别的片段应连续成段（不逐字符刷告警），实际 {split_marks(['hello'])}")
+check(split_marks(["xr3"]) == ["x", "r3"],
+      f"未知字符应单独成段后再接合法标记，实际 {split_marks(['xr3'])}")
+
+# r3h：降水档位 + 气温平移同时生效，且不产生告警
+cfg_marks = cs.resolve("default")
+notes_marks, warnings_marks = apply_marks(cfg_marks, ["r3h"])
+check(not warnings_marks, f"连写的 r3h 不应产生告警，实际 {warnings_marks}")
+check(cfg_marks["axes_primary"]["limit_shift"] == 10.0,
+      f"r3h 的 h 应把气温轴平移 10，实际 {cfg_marks['axes_primary']['limit_shift']}")
+check(cfg_marks["axes_secondary"]["limit"] == [0.0, 300.0],
+      f"r3h 的 r3 应把降水轴上限设为 300，实际 {cfg_marks['axes_secondary']['limit']}")
+check(len(notes_marks) == 2, f"r3h 应给出 2 条变更说明，实际 {notes_marks}")
+
+# hr3：顺序无关，效果相同
+cfg_marks2 = cs.resolve("default")
+apply_marks(cfg_marks2, ["hr3"])
+check(cfg_marks2["axes_primary"]["limit_shift"] == 10.0
+      and cfg_marks2["axes_secondary"]["limit"] == [0.0, 300.0],
+      "hr3 与 r3h 应等效")
+
+# tt18t14：两个字号标记连写
+cfg_marks3 = cs.resolve("default")
+apply_marks(cfg_marks3, ["tt18t14"])
+check(cfg_marks3["figure"]["title"]["fontsize"] == 18.0
+      and cfg_marks3["figure"]["title"]["show"] is True,
+      f"tt18 应设置标题字号，实际 {cfg_marks3['figure']['title']}")
+check(cfg_marks3["axes_primary"]["label_fontsize"] == 14.0,
+      f"t14 应设置气温轴标题字号，实际 {cfg_marks3['axes_primary']['label_fontsize']}")
+
+# 无法识别的标记仍只告警、不中断（hello → h 生效 + ello 告警）
+cfg_marks4 = cs.resolve("default")
+_, warnings_marks4 = apply_marks(cfg_marks4, ["hello"])
+check(cfg_marks4["axes_primary"]["limit_shift"] == 10.0,
+      "hello 里的 h 应生效（其余字符只告警）")
+check(len(warnings_marks4) == 1,
+      f"无法识别的片段应只报 1 条告警，实际 {warnings_marks4}")
 
 # ---- 6. 导出 -------------------------------------------------------------
 

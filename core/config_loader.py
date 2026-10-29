@@ -640,11 +640,77 @@ MARK_TEMP_MAX_STEPS = 3
 MARK_TICK_MIN_RATIO = 10.0
 
 
-def split_marks(raw_items: Optional[Any] = None) -> list[str]:
-    """把 ``--mark`` 的原始参数摊平成标记列表。
+#: 双字符标记前缀：必须比 ``t`` / ``r`` / ``c`` 先匹配（否则 tt18 会被 t 吃掉）
+MARK_TWO_CHAR_PREFIXES = ("tt", "ts", "rs", "cy", "cn")
+#: 需要跟数字的标记首字母
+MARK_NUMBER_HEADS = ("r", "t", "p")
+#: 气温轴量程平移标记（``h`` 上移 / ``c`` 下移，可连写）
+MARK_TEMP_CHARS = ("h", "c")
 
-    支持重复给出（``--m h --m r12``）、空格分隔与逗号分隔（``--m h,r12``），
-    并**去掉所有空白**（``--m " h , r12 "`` 等价于 ``--m h,r12``）。
+
+def _mark_starts_at(text: str, index: int) -> bool:
+    """``text[index:]`` 是否以某个可识别标记开头（用于把无法识别的字符聚成一段）。"""
+    rest = text[index:].lower()
+    return any(rest.startswith(head) for head in
+               MARK_TWO_CHAR_PREFIXES + MARK_NUMBER_HEADS + MARK_TEMP_CHARS)
+
+
+def _split_mark_chunk(text: str) -> list[str]:
+    """把一段（已去掉逗号 / 空白）标记文本按语法切成**原子**标记。
+
+    支持连写：``r3h`` → ``r3`` + ``h``、``hr3`` → ``h`` + ``r3``、
+    ``tt18t14`` → ``tt18`` + ``t14``、``ts5rs50`` → ``ts5`` + ``rs50``。
+
+    无法识别的字符会**连续成段**保留（``hello`` → ``h`` + ``ello``），
+    交给 :func:`apply_marks` 统一告警，避免逐字符刷屏。
+    """
+    tokens: list[str] = []
+    index = 0
+    size = len(text)
+    while index < size:
+        rest = text[index:].lower()
+        prefix = next((p for p in MARK_TWO_CHAR_PREFIXES if rest.startswith(p)), "")
+        if prefix:
+            if prefix in ("cy", "cn"):                  # 无参数标记
+                tokens.append(text[index:index + 2])
+                index += 2
+                continue
+            end = index + 2                             # tt / ts / rs：紧跟的数字（含小数点）
+            while end < size and (text[end].isdigit() or text[end] == "."):
+                end += 1
+            tokens.append(text[index:end])
+            index = end
+            continue
+        char = rest[0]
+        if char in MARK_TEMP_CHARS:                     # h / c 连续串（hhh 一次算 3 档）
+            end = index + 1
+            while end < size and text[end].lower() in MARK_TEMP_CHARS:
+                end += 1
+            tokens.append(text[index:end])
+            index = end
+            continue
+        if char in MARK_NUMBER_HEADS:                   # r / t / p + 数字
+            end = index + 1
+            while end < size and (text[end].isdigit() or text[end] == "."):
+                end += 1
+            tokens.append(text[index:end])
+            index = end
+            continue
+        # 无法识别的字符：连续成段（下一处出现合法标记的开头就断开）
+        end = index + 1
+        while end < size and not _mark_starts_at(text, end):
+            end += 1
+        tokens.append(text[index:end])
+        index = end
+    return tokens
+
+
+def split_marks(raw_items: Optional[Any] = None) -> list[str]:
+    """把 ``--mark`` 的原始参数摊平成**原子**标记列表。
+
+    支持重复给出（``--m h --m r12``）、逗号 / 空格分隔（``--m h,r12``），
+    也支持**连写**（``r3h`` 等价 ``r3,h``、``tt18t14`` 等价 ``tt18,t14``）；
+    空白仍会被去掉（``--m " h , r12 "`` 等价于 ``--m h,r12``）。
     """
     tokens: list[str] = []
     for item in raw_items or []:
@@ -653,7 +719,7 @@ def split_marks(raw_items: Optional[Any] = None) -> list[str]:
             for chunk in str(piece).split(","):
                 text = "".join(str(chunk).split())
                 if text:
-                    tokens.append(text)
+                    tokens.extend(_split_mark_chunk(text))
     return tokens
 
 
@@ -677,7 +743,7 @@ def _axis_span(axis_cfg: dict[str, Any]) -> Optional[float]:
 def apply_marks(cfg: dict[str, Any], raw_items: Optional[Any] = None) -> tuple[list[str], list[str]]:
     """把 ``--mark`` 微调标记作用到**已解析**的配置上，返回 ``(变更说明, 告警)``。
 
-    标记语法（逗号分隔、空格自动去除，字母大小写等价）：
+    标记语法（逗号 / 空格分隔或连写，字母大小写等价，详见 :func:`split_marks`）：
 
     =================================  ==========================================
     ``h`` / ``hh`` / ``hhh``           气温轴**上下限同时** +10 / +20 / +30（最多 3 档=±30）
@@ -738,13 +804,18 @@ def apply_marks(cfg: dict[str, Any], raw_items: Optional[Any] = None) -> tuple[l
         # ---- r：降水轴上限档位 ----
         if head in ("r", "R"):
             digits = [ch for ch in body if ch.isdigit()]
+            stray = "".join(ch for ch in body if not ch.isdigit())
             valid = [int(ch) for ch in digits if 0 <= int(ch) <= len(MARK_RAIN_TIERS) - 1]
             if not valid:
                 warnings.append(f"--mark「{token}」没有 0-5 范围内的档位数字，已忽略")
                 continue
             if len(valid) != len(digits):
                 warnings.append(f"--mark「{token}」忽略了 {len(digits) - len(valid)}"
-                                " 个 0-5 之外的字符")
+                                " 个 0-5 之外的档位数字")
+            if stray:
+                # 正常路径由 split_marks 切成多个标记；这里兜住外部直接传 token 的情况
+                warnings.append(f"--mark「{token}」含非数字字符 {stray}，已忽略"
+                                "（多个标记请用逗号分隔或连写）")
             rain_tiers.extend(valid)
             continue
 

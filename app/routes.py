@@ -9,7 +9,7 @@
 * ``POST /api/profiles/validate``       按数据类型的逐字段校验 + 跨字段校验
 * ``POST /api/profiles/save``           保存修改 / 另存（全量 · 继承差量）
 * ``POST /api/profiles/delete``         删除网页保存的自定义配置
-* ``POST /api/profiles/marks``          快捷微调（``--mark`` 语法）
+* ``POST /api/profiles/marks``          快捷微调预览（``--mark`` 语法；不改配置）
 * ``POST /api/profiles/text``           查看最终配置 / 导出全量模板
 
 城市
@@ -224,7 +224,7 @@ def api_text(ctx: dict) -> Response:
     if kind == "template":
         text = cs.template_text(profile)
     else:
-        text = cs.final_config_text(profile, body.get("values") or {})
+        text = cs.final_config_text(profile, body.get("values") or {}, body.get("marks"))
     return json_response({"kind": kind, "text": text})
 
 
@@ -365,11 +365,34 @@ def api_render(ctx: dict) -> Response:
 
     cfg = cs.resolve(profile, checked["normalized"])
     cfg = task_runner.apply_request_overrides(cfg, body)
+    # 快捷微调（--mark）：只作用在本次出图的配置副本上，不写回表单/配置文件
+    marks = cs.mark_items(body.get("marks"))
+    mark_notes, mark_warnings = task_runner.apply_marks_overrides(cfg, marks)
+    mark_warnings.extend(_mark_cross_warnings(marks, body.get("mode")))
     request = dict(body)
     if "save_files" not in request:
         request["save_files"] = not bool(request.get("no_save"))
     task = task_runner.submit(request, cfg)
-    return json_response({"task": task.snapshot(0), "warnings": checked["warnings"]})
+    for note in mark_notes:
+        task.log("info", note)
+    for item in mark_warnings:
+        task.log("warning", item)
+    return json_response({
+        "task": task.snapshot(0),
+        "warnings": checked["warnings"],
+        "marks": {"applied": marks, "notes": mark_notes, "warnings": mark_warnings},
+    })
+
+
+def _mark_cross_warnings(marks: list[str], mode: Any) -> list[str]:
+    """跨字段提醒：``cy`` / ``cn`` 会改变城市显示名，对比图的颜色键按显示名匹配。"""
+    if not marks or str(mode or "").lower() != "compare":
+        return []
+    from core.config_loader import split_marks
+
+    if any(token.lower() in ("cy", "cn") for token in split_marks(marks)):
+        return ["微调改变了城市显示名，「指定城市颜色」的键可能与显示名对不上"]
+    return []
 
 
 @route("GET", r"/api/render/(?P<task>[0-9a-zA-Z]+)")

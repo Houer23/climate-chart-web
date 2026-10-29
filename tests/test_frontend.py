@@ -247,6 +247,26 @@ unhandled = sorted(
 )
 check(not unhandled, f"以下字段类型在前端没有控件分支：{unhandled}")
 
+# ---- 5.6 快捷微调（--mark）：只随出图下发，不写回表单 --------------------
+
+check("form.applyValues(result.values)" not in app_code,
+      "快捷微调不应把结果写回表单（否则会制造「未保存修改」并弹出保存确认）")
+check("marks: state.marks.join(\",\")" in app_code,
+      "出图请求应携带本次登记的微调标记")
+check("function updateMarksButton" in app_code and "function clearMarks" in app_code,
+      "应有「微调待生效」状态展示与清除入口")
+check("不改动配置" in app_code and "清除微调" in app_code,
+      "微调相关文案应说明不改动配置，并提供清除按钮")
+check("function splitMarkTokens" in app_code, "输入框里的标记应切分成 token 列表")
+
+marks_preview = (ROOT / "app" / "config_service.py").read_text(encoding="utf-8")
+preview_body = marks_preview.split("def apply_marks_payload")[1].split("\ndef ")[0]
+check('"values": form_values_of(cfg)' not in preview_body,
+      "微调预览接口不应返回整份表单值（避免前端写回配置）")
+check("mark_items" in marks_preview, "服务端应统一 marks 参数的形态归一")
+check("apply_marks_overrides" in (ROOT / "app" / "task_runner.py").read_text(encoding="utf-8"),
+      "后端应提供「仅本次出图」的微调入口")
+
 # ---- 结果 ----------------------------------------------------------------
 
 print(f"断言通过 {PASSED} 项，失败 {len(FAILED)} 项")

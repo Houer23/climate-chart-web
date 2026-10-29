@@ -675,6 +675,21 @@ def _run_multi_mode(task: Task, client: HttpClient, cfg: dict[str, Any], out_dir
 
 # ---- 给路由用的辅助 ------------------------------------------------------
 
+def apply_marks_overrides(cfg: dict[str, Any],
+                          marks: list[str] | None = None) -> tuple[list[str], list[str]]:
+    """把 ``--mark`` 快捷微调作用到**本次出图**的配置副本上。
+
+    语义与 CLI 的 ``--mark`` 一致：只影响这一次出图，不写回表单、不落盘配置文件。
+    返回 ``(变更说明, 告警)``，供路由写进任务日志与响应。
+    """
+    items = [str(item) for item in (marks or []) if str(item).strip()]
+    if not items:
+        return [], []
+    from core.config_loader import apply_marks
+
+    return apply_marks(cfg, items)
+
+
 def apply_request_overrides(cfg: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
     """把「本次出图」的开关写进配置副本（不改动已保存的配置文件）。"""
     cfg = dict(cfg)

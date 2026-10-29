@@ -689,10 +689,20 @@ def dump_yaml_text(data: Any) -> str:
 
 
 def final_config_text(profile: Optional[str],
-                      values: Optional[dict[str, Any]] = None) -> str:
-    """「查看最终配置」：当前表单值套用后的完整配置（YAML）。"""
+                      values: Optional[dict[str, Any]] = None,
+                      marks: Optional[Any] = None) -> str:
+    """「查看最终配置」：当前表单值套用后的完整配置（YAML）。
+
+    ``marks`` 与出图时一致（``--mark`` 语法），因此这里看到的就是**本次出图真正用的配置**，
+    但同样只作用于这份文本，不写回表单与配置文件。
+    """
+    from core.config_loader import apply_marks
+
     normalized, _ = normalize_values(values or {})
     cfg = resolve(profile, normalized)
+    items = mark_items(marks)
+    if items:
+        apply_marks(cfg, items)
     return dump_config(cfg)
 
 
@@ -790,8 +800,26 @@ def profile_detail(name: Optional[str]) -> dict[str, Any]:
     }
 
 
+def mark_items(raw: Any) -> list[str]:
+    """把 ``marks`` 参数统一成字符串列表（``"hh,r12"`` 与 ``["hh", "r12"]`` 等价）。
+
+    这里只做「形态」归一，逗号切分与空格去除交给
+    :func:`core.config_loader.split_marks`（两处规则保持一致）。
+    """
+    if isinstance(raw, str):
+        return [raw] if raw.strip() else []
+    if isinstance(raw, (list, tuple)):
+        return [str(item) for item in raw if str(item).strip()]
+    return []
+
+
 def apply_marks_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """应用 ``--mark`` 风格的快捷微调，返回变更说明、告警与调整后的表单值。"""
+    """**预览** ``--mark`` 快捷微调：只返回变更说明、告警与受影响的字段。
+
+    微调**不写回表单、也不写配置文件**：真正生效发生在 ``POST /api/render``，
+    由请求里的 ``marks`` 临时作用到本次出图的配置上（与 CLI 的 ``--mark`` 一致）。
+    因此这里只给前端做「拼写检查 + 影响预览」，不返回整份表单值。
+    """
     from core.config_loader import apply_marks
 
     profile = payload.get("profile") or None
@@ -801,18 +829,15 @@ def apply_marks_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "配置校验未通过：" + "；".join(f"{e['path']} {e['message']}" for e in errors[:5])
         )
     cfg = resolve(profile, normalized)
-    tokens = payload.get("marks")
-    raw_items: list[Any] = []
-    if isinstance(tokens, str):
-        raw_items = [tokens]
-    elif isinstance(tokens, list):
-        raw_items = [str(item) for item in tokens]
-    notes, warnings = apply_marks(cfg, raw_items)
-    return {
-        "notes": notes,
-        "warnings": warnings,
-        "values": form_values_of(cfg),
-    }
+    before = form_values_of(cfg)
+    notes, warnings = apply_marks(cfg, mark_items(payload.get("marks")))
+    after = form_values_of(cfg)
+    changes = [
+        {"path": path, "before": before.get(path), "after": after.get(path)}
+        for path in sorted(before)
+        if before.get(path) != after.get(path)
+    ]
+    return {"notes": notes, "warnings": warnings, "changes": changes}
 
 
 # ---- 缓存管理 ------------------------------------------------------------

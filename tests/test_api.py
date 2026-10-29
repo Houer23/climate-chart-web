@@ -246,15 +246,23 @@ check(not payload["ok"] and any(e["path"].startswith("compare.color_map")
 status, payload = api("POST", "/api/profiles/marks", {
     "profile": "default", "values": {}, "marks": "hh,r12,t14"})
 check(status == 200 and payload["notes"], f"快捷微调应返回变更说明，实际 {payload}")
-check(payload["values"].get("axes_primary.limit_shift") == 20,
-      f"hh 应把气温轴整体上移 20，实际 {payload['values'].get('axes_primary.limit_shift')}")
-check(payload["values"].get("axes_secondary.limit") == [0, 250],
-      f"r12 应把降水轴上限设为 250，实际 {payload['values'].get('axes_secondary.limit')}")
-check(payload["values"].get("axes_primary.label_fontsize") == 14,
-      f"t14 应把气温轴标题字号设为 14，实际 {payload['values'].get('axes_primary.label_fontsize')}")
+check("values" not in payload,
+      "快捷微调预览不应返回整份表单值（否则前端会写回表单、制造「未保存修改」）")
+changes = {item["path"]: item for item in payload.get("changes") or []}
+check(changes.get("axes_primary.limit_shift", {}).get("after") == 20,
+      f"hh 应把气温轴整体上移 20，实际 {changes.get('axes_primary.limit_shift')}")
+check(changes.get("axes_secondary.limit", {}).get("after") == [0, 250],
+      f"r12 应把降水轴上限设为 250，实际 {changes.get('axes_secondary.limit')}")
+check(changes.get("axes_primary.label_fontsize", {}).get("after") == 14,
+      f"t14 应把气温轴标题字号设为 14，实际 {changes.get('axes_primary.label_fontsize')}")
 
 status, payload = api("POST", "/api/profiles/text", {"profile": "default", "kind": "final"})
 check(status == 200 and "temp_unit" in payload["text"], "查看最终配置应返回 YAML")
+
+status, payload = api("POST", "/api/profiles/text",
+                      {"profile": "default", "kind": "final", "marks": "hh"})
+check(status == 200 and "limit_shift: 20" in payload["text"],
+      f"「最终配置」应包含本次微调（hh → limit_shift: 20），实际前缀 {payload['text'][:80]!r}")
 
 # ---- 出图（保存模式） ----------------------------------------------------
 
@@ -348,6 +356,36 @@ temp_chart = [a for a in snapshot["artifacts"] if a["kind"] == "chart"][0]
 status, _headers, raw = call("GET", temp_chart["url"])
 check(status == 200 and raw[:8] == b"\x89PNG\r\n\x1a\n",
       "「不保存」模式的预览图仍应可显示")
+
+# ---- 快捷微调（--mark）：只作用本次出图，不改配置 ------------------------
+
+status, payload = api("POST", "/api/render", {
+    "mode": "city", "cities": ["237"], "profile": "default",
+    "values": FAST, "save_files": False, "marks": "hh,r12,t14",
+})
+mark_info = (payload or {}).get("marks") or {}
+check(status == 200 and mark_info.get("notes"),
+      f"带微调的出图应提交成功并回变更说明，实际 {status} {payload}")
+mark_id = (payload.get("task") or {}).get("id")
+deadline = time.time() + 180
+snapshot = {}
+while time.time() < deadline:
+    status, snapshot = api("GET", f"/api/render/{mark_id}?cursor=0&wait=10")
+    if snapshot.get("status") in ("done", "error", "cancelled"):
+        break
+check(snapshot.get("status") == "done", f"带微调的任务应完成，实际 {snapshot.get('status')}")
+mark_messages = [log["message"] for log in snapshot.get("logs") or []]
+check(any(m.startswith("--mark：") for m in mark_messages),
+      f"任务日志应包含 --mark 变更说明，实际 {mark_messages[:8]}")
+check(all(not a["saved"] for a in snapshot.get("artifacts") or []),
+      "带微调且「不保存」时不应落盘")
+
+status, detail_after = api("GET", "/api/profiles/default")
+check(detail_after["values"]["axes_primary.limit_shift"]
+      == detail["values"]["axes_primary.limit_shift"]
+      and detail_after["values"]["axes_secondary.limit"]
+      == detail["values"]["axes_secondary.limit"],
+      "微调不应改动配置：出图后配置详情应保持原值")
 
 # ---- SSE 实时日志流 ------------------------------------------------------
 

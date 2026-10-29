@@ -31,6 +31,7 @@ const state = {
   logLevels: new Set(["debug", "info", "warning", "error"]),
   cityCandidates: [],      // 已解析 / 查询过的城市（供「指定城市颜色」的键下拉）
   targetCities: [],        // 本次对比城市的显示名（仅「多城市对比」模式有效）
+  marks: [],               // 待生效的 --mark 微调标记（只影响出图，不改动配置）
   resolveTimer: null,
   lastProfile: "",         // 上次使用的配置（服务端持久化，刷新/重开自动选中）
   leftWidthRatio: 0,       // 左栏占窗口宽度的比例（0 = 用默认值）
@@ -231,6 +232,8 @@ async function loadProfile(name) {
   state.profile = detail.name;
   state.detail = detail;
   state.warnings = [];
+  state.marks = [];            // 微调是「本次出图」的事，换配置即失效
+  updateMarksButton();
   form.setValues(detail.values);
   $("#profile-select").value = detail.name;
   updateProfileMeta();
@@ -266,6 +269,7 @@ function updateConfigSummary() {
 
 function wireEvents() {
   initSplitter();
+  updateMarksButton();
 
   $("#profile-select").addEventListener("change", async (event) => {
     const target = event.target.value;
@@ -609,31 +613,88 @@ const MARKS_HELP = [
   "t<数字> / p<数字> / tt<数字>：气温轴 / 降水轴 / 图表标题字号（tt0 = 不显示标题）",
   "ts<数字> / rs<数字>：气温轴 / 降水轴刻度步长",
   "cy：城市名取短名 / cn：城市名用完整名称",
+  "连写：r3h = r3 + h，tt18t14 = tt18 + t14（有歧义时请用逗号）",
 ].join("\n");
 
+/** 把输入框里的标记串切成 token 列表（逗号分隔，去空白）。 */
+function splitMarkTokens(text) {
+  return String(text === null || text === undefined ? "" : text)
+    .split(",")
+    .map((piece) => piece.trim())
+    .filter(Boolean);
+}
+
+/** 顶栏「快捷微调」按钮反映待生效标记数量（不写表单、不产生脏状态）。 */
+function updateMarksButton() {
+  const button = $("#btn-marks");
+  if (!button) return;
+  const count = state.marks.length;
+  button.textContent = count ? `快捷微调 (${count})` : "快捷微调";
+  button.title = count
+    ? `本次出图生效的微调：${state.marks.join(",")}（不改动配置）`
+    : "按 --mark 语法快速微调（只影响出图，不改动配置）";
+}
+
+function clearMarks({ silent = false } = {}) {
+  const had = state.marks.length > 0;
+  state.marks = [];
+  updateMarksButton();
+  if (had && !silent) toast("已清除微调，后续出图不再套用", "ok");
+}
+
 async function marksDialog() {
-  const input = h("input", { type: "text", placeholder: "如：hh,r12,t14,p14,tt18" });
+  const input = h("input", {
+    type: "text",
+    placeholder: "如：hh,r12,t14,p14,tt18",
+    value: state.marks.join(","),
+  });
+  const errorLine = h("div", { class: "fmsg err" });
   const body = h("div", {}, [
-    h("p", { class: "muted small", text: "逗号分隔，可一次给多个；空格会自动去除。" }),
+    h("p", { class: "muted small",
+      text: "逗号分隔，可一次给多个；也可连写（r3h = r3,h）。空格会自动去除。" }),
+    h("p", { class: "muted small",
+      text: "微调只在出图时临时生效（等价命令行 --mark）：不改动上方配置项，也不会写入配置文件。" }),
     h("label", { class: "field" }, [h("span", { class: "label", text: "微调标记" }), input]),
     h("pre", { text: MARKS_HELP }),
+    errorLine,
   ]);
-  const marks = await showModal({
-    title: "快捷微调（--mark 语法）",
-    body,
-    buttons: [{ label: "取消", value: null },
-      { label: "应用", kind: "primary", action: () => input.value }],
+  const buttons = [{ label: "取消", value: null }];
+  if (state.marks.length) buttons.push({ label: "清除微调", value: "__clear__" });
+  buttons.push({
+    label: "登记微调",
+    kind: "primary",
+    action: () => {
+      const tokens = splitMarkTokens(input.value);
+      if (!tokens.length) {
+        errorLine.textContent = "请先填写微调标记；要取消请用「清除微调」或「取消」";
+        return false;
+      }
+      return tokens.join(",");
+    },
   });
-  if (marks === null || marks === undefined || marks === "") return;
+
+  const marks = await showModal({ title: "快捷微调（--mark 语法）", body, buttons });
+  if (marks === null || marks === undefined) return;
+  if (marks === "__clear__") { clearMarks(); return; }
+
   try {
+    // 只做预览（拼写检查 + 影响范围），返回的变更不会写回表单
     const result = await API.post("/api/profiles/marks", {
       profile: state.profile, values: form.getValues(), marks,
     });
-    form.applyValues(result.values);
-    (result.notes || []).forEach((note) => toast(note, "ok"));
-    (result.warnings || []).forEach((note) => toast(`微调告警：${note}`, "warn"));
-    if (!result.notes.length && !result.warnings.length) toast("该标记未产生变化", "warn");
-    toast("微调结果已写入表单（未保存）", "warn");
+    const notes = result.notes || [];
+    const warnings = result.warnings || [];
+    if (!notes.length) {
+      warnings.forEach((note) => toast(`微调告警：${note}`, "warn", 9000));
+      toast(warnings.length ? "没有可识别的微调标记，未登记" : "该标记未产生变化，未登记",
+        warnings.length ? "err" : "warn");
+      return;
+    }
+    state.marks = splitMarkTokens(marks);
+    updateMarksButton();
+    notes.forEach((note) => toast(note, "ok"));
+    warnings.forEach((note) => toast(`微调告警：${note}`, "warn", 9000));
+    toast(`已登记 ${state.marks.length} 个微调标记：仅影响出图，不改动配置`, "ok");
   } catch (error) {
     toast(`微调失败：${error.payload ? error.payload.error : error.message}`, "err");
   }
@@ -643,6 +704,8 @@ async function textDialog(kind) {
   try {
     const payload = await API.post("/api/profiles/text", {
       profile: state.profile, values: form.getValues(), kind,
+      // 「最终配置」要包含本次已登记的微调，才是出图真正用的配置
+      marks: kind === "final" ? state.marks.join(",") : "",
     });
     const title = kind === "template" ? "全量配置模板（导出为 YAML）" : "最终配置（当前表单值套用后）";
     const fileName = `${state.profile}_${kind === "template" ? "template" : "final"}.yaml`;
@@ -903,6 +966,7 @@ async function render() {
     grid: $("#grid-input").value.trim(),
     compare_metric: $("#metric-input").value,
     compare_cities: compareCities,
+    marks: state.marks.join(","),   // 快捷微调：只随本次出图下发，不回写配置
   };
 
   clearResult();
@@ -912,11 +976,18 @@ async function render() {
     i: -1, t: 0, level: "info",
     message: `提交任务：${mode === "city" ? "单城/批量" : mode === "compare" ? "对比图" : "多图"}`
       + ` · 城市 ${cities.join(", ")} · 配置 ${state.profile}`
+      + (state.marks.length ? ` · 微调 ${state.marks.join(",")}` : "")
       + ` · ${body.save_files ? "保存到本地" : "仅网页显示（不保存）"}`,
   });
 
   try {
     const payload = await API.post("/api/render", body);
+    const markWarnings = (payload.marks || {}).warnings || [];
+    if (markWarnings.length) {
+      state.warnings = [...state.warnings,
+        ...markWarnings.map((message) => ({ message: `微调告警：${message}` }))];
+      renderWarnings();
+    }
     startTask(payload.task);
   } catch (error) {
     setRunning(false);
